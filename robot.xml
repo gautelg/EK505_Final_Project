@@ -1,0 +1,52 @@
+<mujoco model="space_robot">
+    <compiler angle="degree"/>
+    <option gravity="0 0 0"/>
+    <worldbody>
+        <!-- satbox -->
+        <body name="robot" pos="0 0 0">
+            <freejoint/>
+            <geom type="box" size="0.5 0.5 0.5" rgba="0.3 0.3 0.8 1" mass="10"/>
+            
+            <!-- Thrusters: one on each face -->
+            <!-- +X -->
+            <site name="thruster_px" pos="0.5 0 0" size="0.05" rgba="1 0 0 1"/>
+            <!-- -X -->
+            <site name="thruster_nx" pos="-0.5 0 0" size="0.05" rgba="1 0 0 1"/>
+            <!-- +Y -->
+            <site name="thruster_py" pos="0 0.5 0" size="0.05" rgba="0 1 0 1"/>
+            <!-- -Y -->
+            <site name="thruster_ny" pos="0 -0.5 0" size="0.05" rgba="0 1 0 1"/>
+            <!-- +Z -->
+            <site name="thruster_pz" pos="0 0 0.5" size="0.05" rgba="0 0 1 1"/>
+            <!-- -Z -->
+            <site name="thruster_nz" pos="0 0 -0.5" size="0.05" rgba="0 0 1 1"/>
+
+            <!-- Reaction wheels -->
+            <body name="reaction_wheel_x" pos="0 0 0">
+                <joint name="rw_x" type="hinge" axis="1 0 0" limited="false"/>
+                <geom type="cylinder" size="0.1 0.02" rgba="1 1 0 1" contype="0" conaffinity="0"/>
+            </body>
+            <body name="reaction_wheel_y" pos="0 0 0">
+                <joint name="rw_y" type="hinge" axis="0 1 0" limited="false"/>
+                <geom type="cylinder" size="0.1 0.02" rgba="1 1 0 1" contype="0" conaffinity="0"/>
+            </body>
+            <body name="reaction_wheel_z" pos="0 0 0">
+                <joint name="rw_z" type="hinge" axis="0 0 1" limited="false"/>
+                <geom type="cylinder" size="0.1 0.02" rgba="1 1 0 1" contype="0" conaffinity="0"/>
+            </body>
+        </body>
+    </worldbody>
+    <actuator>
+    <!-- Thruster actuators -->
+    <general name="thruster_px" site="thruster_px" ctrllimited="true" ctrlrange="0 10" gear="1 0 0"/>
+    <general name="thruster_nx" site="thruster_nx" ctrllimited="true" ctrlrange="0 10" gear="-1 0 0"/>
+    <general name="thruster_py" site="thruster_py" ctrllimited="true" ctrlrange="0 10" gear="0 1 0"/>
+    <general name="thruster_ny" site="thruster_ny" ctrllimited="true" ctrlrange="0 10" gear="0 -1 0"/>
+    <general name="thruster_pz" site="thruster_pz" ctrllimited="true" ctrlrange="0 10" gear="0 0 1"/>
+    <general name="thruster_nz" site="thruster_nz" ctrllimited="true" ctrlrange="0 10" gear="0 0 -1"/>
+        <!-- Reaction wheel actuators -->
+        <motor name="rw_x" joint="rw_x" ctrllimited="true" ctrlrange="-1 1"/>
+        <motor name="rw_y" joint="rw_y" ctrllimited="true" ctrlrange="-1 1"/>
+        <motor name="rw_z" joint="rw_z" ctrllimited="true" ctrlrange="-1 1"/>
+    </actuator>
+</mujoco>
