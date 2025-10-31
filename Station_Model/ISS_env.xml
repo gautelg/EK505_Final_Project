@@ -1,0 +1,21 @@
+<mujoco model="iss_env">
+  <compiler meshdir="." discardvisual="false"/>
+  <option timestep="0.002" gravity="0 0 0"/>
+
+  <asset>
+    <mesh name="iss" file="ISS_Stationary_Bare.stl" scale="1 1 1"/>
+  </asset>
+
+  <worldbody>
+    <body name="station" pos="0 0 0">
+      <!-- visual-only: no contacts -->
+      <geom type="mesh" mesh="iss" contype="0" conaffinity="0" rgba="0.8 0.8 0.8 1"/>
+    </body>
+
+    <!-- toy probe so you see something moving -->
+    <body name="probe" pos="0 0 5">
+      <freejoint/>
+      <geom type="sphere" size="0.2" rgba="0.1 0.7 0.1 1"/>
+    </body>
+  </worldbody>
+</mujoco>
