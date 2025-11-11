@@ -101,7 +101,7 @@ def step_until(target_sim_time):
 def ref(input):
 
     pW_des  = np.zeros(3)                 # expected position
-    # pW_des  = np.array([1.0, 1.0, 1.0])
+    pW_des  = np.array([2.0, -3.0, 1.0])
     vW_des  = np.zeros(3)                 # expected velocity
     qWB_des = np.array([0.70710678, 0.70710678, 0.0, 0.0])  # expected quaternion
     # qWB_des = np.array([1.0, 0.0, 0.0, 0.0])
@@ -119,60 +119,54 @@ def set_axis_with_min(u, pos_name, neg_name, F_axis, Fsat=10.0, min_fire=0.0):
     else:
         if neg_id is not None: u[neg_id] = min(-F_axis, Fsat)
 
+
 def controller(model, data, input):
     u = np.zeros(model.nu)
 
     # ------------ read state ------------
-    # Read robot pose/vel using its joint qpos/qvel addresses
-    pW  = np.array(data.qpos[robot_qpos_adr:robot_qpos_adr+3])     # position in world
-    qWB = np.array(data.qpos[robot_qpos_adr+3:robot_qpos_adr+7])     # quaternion [w,x,y,z] (world <- body)
-    vW  = np.array(data.qvel[robot_qvel_adr+3:robot_qvel_adr+6])     # linear vel in world
-    wW  = np.array(data.qvel[robot_qvel_adr:robot_qvel_adr+3])       # angular vel in world
-   
-    R_WB = quat_to_R(qWB)
-    wB   = R_WB.T @ wW                 # angular vel in body frame
+    pW  = np.array(data.qpos[robot_qpos_adr : robot_qpos_adr+3])          # world pos
+    qWB = np.array(data.qpos[robot_qpos_adr+3 : robot_qpos_adr+7])        # [w,x,y,z], world<-body
+  
+    vW  = np.array(data.qvel[robot_qvel_adr     : robot_qvel_adr+3])      # linear vel in world
+    wW  = np.array(data.qvel[robot_qvel_adr+3   : robot_qvel_adr+6])      # angular vel in world
 
-    # ------------ references ------------
+    # body-frame omega
+    R_WB = quat_to_R(qWB)            
+    wB   = R_WB.T @ wW               
+
+    # ------------ Goal ------------
     pW_des, vW_des, qWB_des, wB_des = ref(input)
 
-   # ------------ translation: cascaded pos->vel->acc (with limits) ------------
+    # ------------ translation-----------
+    POS_TOL = 2e-3; VEL_TOL = 2e-3
+    xW = pW - pW_des
+    vW_err = vW - vW_des
+    xW = np.where(np.abs(xW)    < POS_TOL, 0.0, xW)
+    vW_err = np.where(np.abs(vW_err) < VEL_TOL, 0.0, vW_err)
 
+    m = 25.0  
+    
+    Kp_pos = 25.0
+    Kv_pos = 50.0
 
-    xW = (pW - pW_des)
-    vW = (vW - vW_des)
-
-    POS_TOL = 2e-3   # 2 mm
-    VEL_TOL = 2e-3   # 2 mm/s
-    xW = np.where(np.abs(xW) < POS_TOL, 0.0, xW)
-    vW = np.where(np.abs(vW) < VEL_TOL, 0.0, vW)
+    a_des = -Kp_pos * xW - Kv_pos * vW_err          
+    F_W   = m * a_des                              
+    F_B   = R_WB.T @ F_W                            
 
     Fmax_axis = 20.0
-    Kp_pos    = 100.0
-    Kv_pos    = 100.0
-
-    F_W = -Kp_pos * xW - Kv_pos * vW
-    F_B = R_WB.T @ F_W
-    
-
-
     set_axis_with_min(u, "thruster_px","thruster_nx", F_B[0], Fsat=Fmax_axis)
     set_axis_with_min(u, "thruster_py","thruster_ny", F_B[1], Fsat=Fmax_axis)
     set_axis_with_min(u, "thruster_pz","thruster_nz", F_B[2], Fsat=Fmax_axis)
 
+    # ------------ rotation------------
+   
+    eR   = attitude_error_vec(qWB, qWB_des)     # body error vector
 
-    # ------------ attitude PD (body) -> reaction wheel torques ------------
-    # reaction wheel torque control gains
-    # Reduce P slightly and increase D for better damping of oscillations
-    K_R = np.array([20.0, 20.0, 20.0])   # roll/pitch/yaw P
-    K_w = np.array([20.0, 20.0, 20.0])   # roll/pitch/yaw D
+    K_R = np.array([2.0, 2.0, 2.0])
+    K_w = np.array([0.6, 0.6, 0.6])
+    tauB = -K_R*eR - K_w*(wB - wB_des)
 
-    eR   = attitude_error_vec(qWB, qWB_des)              # attitude error vector
-    tauB = -K_R*eR - K_w*(wB - wB_des)                   # desired body torque
-    # tauB = np.array([0.0, 0.0, 0.0])
-
-    # clip to motor control limits (as set in robot.xml: ±2.0)
     tauB = np.clip(tauB, -5.0, 5.0)
-
     if ACT["rw_x"] is not None: u[ACT["rw_x"]] = tauB[0]
     if ACT["rw_y"] is not None: u[ACT["rw_y"]] = tauB[1]
     if ACT["rw_z"] is not None: u[ACT["rw_z"]] = tauB[2]
