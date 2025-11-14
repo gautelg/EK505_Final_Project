@@ -1,0 +1,27 @@
+[INFO] Mesh loaded. Triangles: 1739
+[INFO] Computed centroids: 1739
+[INFO] Generated 1739 viewpoints
+[INFO] KMeans reduced 1739 -> 100 viewpoints
+[INFO] Raycasting scene created.
+[INFO] Processed visibility for viewpoint 0/100
+[INFO] Processed visibility for viewpoint 50/100
+[INFO] TSP solved for viewpoints
+[INFO] Saved viewpoints and path to data/outputs/viewpoints.json
+[INFO] Mesh loaded. Triangles: 1739
+[INFO] Computed centroids: 1739
+[INFO] Generated 1739 viewpoints
+[INFO] KMeans reduced 1739 -> 100 viewpoints
+[INFO] Raycasting scene created.
+[INFO] Processed visibility for viewpoint 0/100
+[INFO] Processed visibility for viewpoint 50/100
+[INFO] TSP solved for viewpoints
+[INFO] Saved viewpoints and path to data/outputs/viewpoints.json
+[INFO] Mesh loaded. Triangles: 1739
+[INFO] Computed centroids: 1739
+[INFO] Generated 1739 viewpoints
+[INFO] KMeans reduced 1739 -> 100 viewpoints
+[INFO] Raycasting scene created.
+[INFO] Processed visibility for viewpoint 0/100
+[INFO] Processed visibility for viewpoint 50/100
+[INFO] TSP solved for viewpoints
+[INFO] Saved viewpoints and path to data/outputs/viewpoints.json

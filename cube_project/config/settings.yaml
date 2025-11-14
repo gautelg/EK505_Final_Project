@@ -1,0 +1,46 @@
+system:
+  run_geometry: true
+  run_viewpoints: true
+  run_visibility: true
+  run_clustering: true
+  run_tsp: true
+  run_detection: false
+  run_control: false
+  visualize: true
+
+geometry:
+  mesh_path: "data/iss_wt_simplified.obj"
+  #mesh_path: "data/mesh_spacestationAgena.obj"
+  cleaning:
+    enable: false
+    remove_degenerate: false
+    smooth_iterations: 0
+  clean_outer_surface: false   # Only generate outer surface for viewpoints
+
+viewpoint:
+  distance: 5.0               # meters from surface along normals
+  use_sphere: false
+  num_sphere_samples: 500     # only used if use_sphere=true
+
+visualization:
+  viewpoint_size: 3.0         # radius in meters if Open3D sphere, or marker size in Plotly
+  plot_normals: false          # set True to visualize viewpoint normals
+  normal_length: 1.0          # scaling factor for normals
+  plot_projections: true      # set True to visualize centroid -> viewpoint rays
+  projection_subsample: 50    # draw projection lines for every Nth centroid
+
+clustering:
+  enable: true
+  method: "kmeans"            # options: dbscan, kmeans
+  n_clusters: 100             # desired number of clusters
+  eps: 1.0                    # max distance between points in a cluster (meters)
+  min_samples: 1
+
+visibility:
+  enable: true                # compute raycasting visibility
+
+tsp:
+  method: "nearest_neighbor"
+
+output_folder: "data/outputs/"
+logging_file: "data/outputs/logs/run.log"
