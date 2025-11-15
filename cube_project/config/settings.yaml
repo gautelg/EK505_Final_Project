@@ -9,8 +9,9 @@ system:
   visualize: true
 
 geometry:
-  mesh_path: "data/iss_wt_simplified.obj"
+  #mesh_path: "data/iss_wt_simplified.obj"
   #mesh_path: "data/mesh_spacestationAgena.obj"
+  mesh_path: "data/simple_station.obj"
   cleaning:
     enable: false
     remove_degenerate: false
