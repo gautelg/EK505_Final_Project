@@ -7,6 +7,7 @@ system:
   run_detection: false
   run_control: false
   visualize: true
+  run_collision_free_path: true
 
 geometry:
   #mesh_path: "data/iss_wt_simplified.obj"
@@ -19,29 +20,44 @@ geometry:
   clean_outer_surface: false   # Only generate outer surface for viewpoints
 
 viewpoint:
-  distance: 5.0               # meters from surface along normals
+  distance: 5.0                # meters from surface along normals
   use_sphere: false
-  num_sphere_samples: 500     # only used if use_sphere=true
+  num_sphere_samples: 500      # only used if use_sphere=true
 
 visualization:
-  viewpoint_size: 3.0         # radius in meters if Open3D sphere, or marker size in Plotly
+  viewpoint_size: 3.0          # radius in meters if Open3D sphere, or marker size in Plotly
   plot_normals: false          # set True to visualize viewpoint normals
-  normal_length: 1.0          # scaling factor for normals
-  plot_projections: true      # set True to visualize centroid -> viewpoint rays
-  projection_subsample: 50    # draw projection lines for every Nth centroid
+  normal_length: 1.0           # scaling factor for normals
+  plot_projections: true       # set True to visualize centroid -> viewpoint rays
+  projection_subsample: 50     # draw projection lines for every Nth centroid
+  plot_pointing: true          # draw attitude arrows at waypoints?
+  pointing_length: 2.0         # length of the arrows in meters
+  pointing_subsample: 1        # use 1 to draw at every waypoint, 5 to draw every 5th, etc.
 
 clustering:
   enable: true
-  method: "kmeans"            # options: dbscan, kmeans
-  n_clusters: 100             # desired number of clusters
-  eps: 1.0                    # max distance between points in a cluster (meters)
+  method: "kmeans"             # options: dbscan, kmeans
+  n_clusters: 100              # desired number of clusters
+  eps: 1.0                     # max distance between points in a cluster (meters)
   min_samples: 1
 
 visibility:
-  enable: true                # compute raycasting visibility
+  enable: true                 # compute raycasting visibility
 
 tsp:
   method: "nearest_neighbor"
+
+collision:
+  margin: 0.5                  # safety margin in meters outside hull
+  num_samples: 20              # samples per segment when checking collisions
+  step: 1.0                    # how far to shift midpoint per iteration (m)
+  max_shift: 20.0              # max total shift distance (m)
+  max_depth: 3                 # recursion depth for repair_segment
+
+trajectory:
+  cruise_speed: 0.05           # m/s along segments
+  dwell_time: 5.0              # seconds dwell at each waypoint (can set 0.0)
+  forward_axis: "z"            # or "x" / "y" depending on your MuJoCo body frame
 
 output_folder: "data/outputs/"
 logging_file: "data/outputs/logs/run.log"

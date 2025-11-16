@@ -1,5 +1,6 @@
 # src/pipeline/run_full_pipeline.py
 
+import numpy as np
 import logging
 from src.pipeline.run_geometry import run_geometry
 from src.pipeline.run_viewpoints import run_viewpoints
@@ -13,6 +14,8 @@ def run_full_pipeline(config):
     normals = None
     viewpoints = None
     path = None
+    safe_waypoints = None
+    trajectory = None
 
     # -----------------------------
     # GEOMETRY
@@ -32,6 +35,31 @@ def run_full_pipeline(config):
     else:
         logging.info("[SYSTEM] Viewpoint generation skipped")
 
+    # -----------------------------
+    # COLLISION-FREE PATH + TRAJECTORY
+    # -----------------------------
+    if system_cfg.get("run_collision_free_path", False):
+        # only run if we have what we need
+        if (
+            mesh is not None
+            and centroids is not None
+            and normals is not None
+            and viewpoints is not None
+            and path is not None
+        ):
+            from src.pipeline.run_collision_free_path import run_collision_free_path
+            logging.info("[SYSTEM] Running collision-free path planning...")
+            safe_waypoints, trajectory = run_collision_free_path(
+                config, mesh, centroids, normals, viewpoints, path
+            )
+        else:
+            logging.warning(
+                "[SYSTEM] Cannot run collision-free path planning: "
+                "missing mesh/viewpoints/path."
+            )
+    else:
+        logging.info("[SYSTEM] Collision-free path planning skipped")
+    
     # -----------------------------
     # CONTROL
     # -----------------------------
@@ -56,9 +84,28 @@ def run_full_pipeline(config):
     # VISUALIZE
     # -----------------------------
     if system_cfg.get("visualize", True):
-        if mesh is not None and viewpoints is not None and path is not None:
-            logging.info("[SYSTEM] Visualizing results...")
-            from src.visualization.visualize import plot_path
+        from src.visualization.visualize import plot_path
+
+        # Prefer collision-free path if we have it
+        if mesh is not None and safe_waypoints is not None:
+            logging.info("[SYSTEM] Visualizing collision-free path...")
+            vp_vis = safe_waypoints
+            path_vis = np.arange(vp_vis.shape[0])
+
+            plot_path(
+                mesh,
+                vp_vis,
+                path_vis,
+                vp_size=config["visualization"]["viewpoint_size"],
+                plot_normals=config["visualization"]["plot_normals"],
+                normal_length=config["visualization"]["normal_length"],
+                plot_projections=config["visualization"]["plot_projections"],
+                projection_subsample=config["visualization"]["projection_subsample"],
+                orientations=trajectory.orientations,
+            )
+
+        elif mesh is not None and viewpoints is not None and path is not None:
+            logging.info("[SYSTEM] Visualizing original viewpoint path...")
             plot_path(
                 mesh,
                 viewpoints,
@@ -67,7 +114,7 @@ def run_full_pipeline(config):
                 plot_normals=config["visualization"]["plot_normals"],
                 normal_length=config["visualization"]["normal_length"],
                 plot_projections=config["visualization"]["plot_projections"],
-                projection_subsample=config["visualization"]["projection_subsample"]
+                projection_subsample=config["visualization"]["projection_subsample"],
             )
         else:
             logging.warning("[SYSTEM] Not enough data to visualize.")
