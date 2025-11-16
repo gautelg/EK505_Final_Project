@@ -14,7 +14,6 @@ from src.control.collision_avoidance import (
 )
 
 from src.control.trajectory import build_trajectory, Trajectory
-from src.control.attitude import compute_look_at_face_orientations
 
 def _get_output_dir(config: Dict[str, Any]) -> Path:
     """
@@ -154,22 +153,11 @@ def run_collision_free_path(
         f"dwell_time={dwell_time}"
     )
 
-    # Attitude: look at nearest station face for each waypoint
-    # Choose which body axis is considered "forward" in your MuJoCo model: 'x', 'y', or 'z'.
-    forward_axis = traj_cfg.get("forward_axis", "z")
-
-    orientations = compute_look_at_face_orientations(
-        waypoints=safe_waypoints,
-        centroids=centroids,
-        forward_axis=forward_axis,
-        world_up=np.array([0.0, 0.0, 1.0]),
-    )
-
     trajectory = build_trajectory(
         waypoints=safe_waypoints,
         cruise_speed=cruise_speed,
         dwell_times=dwell_time,
-        orientations=orientations,
+        orientations=None,
     )
 
     # 5) Export to disk

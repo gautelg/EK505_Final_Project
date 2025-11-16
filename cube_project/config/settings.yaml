@@ -10,9 +10,9 @@ system:
   run_collision_free_path: true
 
 geometry:
-  #mesh_path: "data/iss_wt_simplified.obj"
+  mesh_path: "data/iss_wt_simplified.obj"
   #mesh_path: "data/mesh_spacestationAgena.obj"
-  mesh_path: "data/simple_station.obj"
+  #mesh_path: "data/simple_station.obj"
   cleaning:
     enable: false
     remove_degenerate: false
@@ -30,9 +30,6 @@ visualization:
   normal_length: 1.0           # scaling factor for normals
   plot_projections: true       # set True to visualize centroid -> viewpoint rays
   projection_subsample: 50     # draw projection lines for every Nth centroid
-  plot_pointing: true          # draw attitude arrows at waypoints?
-  pointing_length: 2.0         # length of the arrows in meters
-  pointing_subsample: 1        # use 1 to draw at every waypoint, 5 to draw every 5th, etc.
 
 clustering:
   enable: true
@@ -57,7 +54,6 @@ collision:
 trajectory:
   cruise_speed: 0.05           # m/s along segments
   dwell_time: 5.0              # seconds dwell at each waypoint (can set 0.0)
-  forward_axis: "z"            # or "x" / "y" depending on your MuJoCo body frame
 
 output_folder: "data/outputs/"
 logging_file: "data/outputs/logs/run.log"

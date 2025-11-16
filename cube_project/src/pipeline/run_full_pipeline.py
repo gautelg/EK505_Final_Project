@@ -101,7 +101,6 @@ def run_full_pipeline(config):
                 normal_length=config["visualization"]["normal_length"],
                 plot_projections=config["visualization"]["plot_projections"],
                 projection_subsample=config["visualization"]["projection_subsample"],
-                orientations=trajectory.orientations,
             )
 
         elif mesh is not None and viewpoints is not None and path is not None:
