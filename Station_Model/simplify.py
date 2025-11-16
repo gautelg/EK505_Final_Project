@@ -3,14 +3,28 @@ import bpy, os, sys
 
 # ---- CONFIG ----
 INPUT  = os.path.abspath("ISS_stationary_bare.glb")
-OUTPUT = os.path.abspath("iss_wt_simplified.glb")
 
-VOXEL_SIZE     = 0.5      # meters
-SCALE_FACTOR   = 2.5       # 1.0 = no scaling
+# Path to this script
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Project root = parent directory
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+
+# Desired output directory
+DATA_DIR = os.path.join(PROJECT_ROOT, "cube_project", "data")
+
+# Ensure it exists
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Final path
+OUTPUT = os.path.join(DATA_DIR, "iss_wt_simplified.obj")
+
+VOXEL_SIZE     = 1.0      # meters
+SCALE_FACTOR   = 1.0       # 1.0 = no scaling
 SMOOTH_ITERS   = 8
-SMOOTH_LAMBDA  = 0.12
-DECIMATE_RATIO = 0.3
-WELD_THRESH    = 0.2      # meters
+SMOOTH_LAMBDA  = 0.15
+DECIMATE_RATIO = 0.1
+WELD_THRESH    = 1.0      # meters
 # ---------------
 
 def set_active(obj):
@@ -92,11 +106,11 @@ bpy.ops.object.modifier_apply(modifier=tri.name)
 # Smooth shading
 bpy.ops.object.shade_smooth()
 
-# Export GLB
-bpy.ops.export_scene.gltf(
+# Export OBJ
+bpy.ops.wm.obj_export(
     filepath=OUTPUT,
-    export_format='GLB',
-    use_selection=False,
-    export_apply=True
+    export_selected_objects=False,
+    export_eval_mode='DAG_EVAL_VIEWPORT',
+    export_triangulated_mesh=True
 )
 print("[OK] Exported:", OUTPUT)
