@@ -7,6 +7,8 @@ from typing import Any, Dict, Tuple
 
 import numpy as np
 
+from src.control.pointing import compute_pointing_vectors
+
 from src.geometry.collision import build_collision_checker_from_geometry
 from src.control.collision_avoidance import (
     compute_station_center,
@@ -72,7 +74,7 @@ def run_collision_free_path(
     normals: np.ndarray,
     viewpoints: np.ndarray,
     path: np.ndarray,
-) -> Tuple[np.ndarray, Trajectory]:
+) -> Tuple[np.ndarray, Trajectory, np.ndarray]:
     """
     High-level pipeline:
 
@@ -143,6 +145,13 @@ def run_collision_free_path(
         f"(from {ordered_waypoints.shape[0]} original)."
     )
 
+    pointing_vectors = compute_pointing_vectors(
+        waypoints=safe_waypoints,
+        centroids=centroids,
+        original_waypoints=ordered_waypoints,
+        tol=1e-3,
+    )
+
     # 4) Trajectory configuration
     traj_cfg = config.get("trajectory", {})
     cruise_speed = float(traj_cfg.get("cruise_speed", 0.05))  # m/s
@@ -163,13 +172,13 @@ def run_collision_free_path(
     # 5) Export to disk
     out_dir = _get_output_dir(config)
     _export_safe_waypoints(out_dir, safe_waypoints)
-    _export_trajectory(out_dir, trajectory)
+    _export_trajectory(out_dir, trajectory, pointing_vectors)
 
     logging.info(
         f"[CollisionFreePath] Exported collision-free path and trajectory to {out_dir}"
     )
 
-    return safe_waypoints, trajectory
+    return safe_waypoints, trajectory, pointing_vectors
 
 
 def _export_safe_waypoints(out_dir: Path, waypoints: np.ndarray) -> None:
@@ -186,11 +195,7 @@ def _export_safe_waypoints(out_dir: Path, waypoints: np.ndarray) -> None:
     logging.info(f"[CollisionFreePath] Saved safe waypoints to {path}")
 
 
-def _export_trajectory(out_dir: Path, traj: Trajectory) -> None:
-    """
-    Export trajectory meta-data to JSON so the controller can reconstruct
-    or directly use it.
-    """
+def _export_trajectory(out_dir: Path, traj: Trajectory, pointing_vectors: np.ndarray) -> None:
     path = out_dir / "trajectory.json"
 
     data = {
@@ -198,11 +203,12 @@ def _export_trajectory(out_dir: Path, traj: Trajectory) -> None:
         "arrival_times": traj.arrival_times.tolist(),
         "dwell_times": traj.dwell_times.tolist(),
         "total_time": traj.total_time,
-        # If you later add orientations per waypoint:
         "orientations": traj.orientations.tolist(),
+        "pointing_vectors": pointing_vectors.tolist(),
     }
 
     with path.open("w") as f:
         json.dump(data, f, indent=2)
 
     logging.info(f"[CollisionFreePath] Saved trajectory to {path}")
+

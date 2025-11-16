@@ -1,18 +1,21 @@
-""" handles all visualization (spheres, lines, mesh display) """
+""" handles all visualization (mesh, viewpoints, path, normals, projection rays, pointing arrows) """
 
 import plotly.graph_objects as go
 import numpy as np
 from scipy.spatial import cKDTree
 
-def plot_path(mesh,
-            viewpoints,
-            path,
-            config=None,
-            vp_size=None,
-            plot_normals=None,
-            normal_length=None,
-            plot_projections=None,
-            projection_subsample=None,
+
+def plot_path(
+    mesh,
+    viewpoints,
+    path,
+    vp_size,
+    plot_normals,
+    normal_length,
+    plot_projections,
+    projection_subsample,
+    pointing_vectors=None,
+    pointing_scale=1.0,
 ):
     """
     Plots:
@@ -21,35 +24,31 @@ def plot_path(mesh,
     - Shortest path (TSP)
     - Optional: Triangle normals as cones
     - Optional: Lines from centroids → nearest viewpoint (projection rays)
+    - Optional: Pointing vectors as arrows from each viewpoint
     """
-
-    # -----------------------
-    # Extract config if available
-    # -----------------------
-    if config is not None:
-        viz_cfg = config.get("visualization", {})
-        vp_size = vp_size if vp_size is not None else viz_cfg.get("viewpoint_size", 5)
-        plot_normals = plot_normals if plot_normals is not None else viz_cfg.get("plot_normals", False)
-        normal_length = normal_length if normal_length is not None else viz_cfg.get("normal_length", 1.0)
-        plot_projections = plot_projections if plot_projections is not None else viz_cfg.get("plot_projections", True)
-        projection_subsample = projection_subsample if projection_subsample is not None else viz_cfg.get("projection_subsample", 50)
-    else:
-        vp_size = vp_size or 5
-        plot_normals = plot_normals or False
-        normal_length = normal_length or 1.0
-        plot_projections = plot_projections or True
-        projection_subsample = projection_subsample or 50
 
     # -----------------------
     # Mesh
     # -----------------------
     vertices = np.asarray(mesh.vertices)
     triangles = np.asarray(mesh.triangles)
-    x, y, z = vertices[:,0], vertices[:,1], vertices[:,2]
-    i, j, k = triangles[:,0], triangles[:,1], triangles[:,2]
+    x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
+    i, j, k = triangles[:, 0], triangles[:, 1], triangles[:, 2]
 
     fig = go.Figure(
-        data=[go.Mesh3d(x=x, y=y, z=z, i=i, j=j, k=k, color="lightgrey", opacity=0.5)]
+        data=[
+            go.Mesh3d(
+                x=x,
+                y=y,
+                z=z,
+                i=i,
+                j=j,
+                k=k,
+                color="lightgrey",
+                opacity=0.5,
+                name="Mesh",
+            )
+        ]
     )
 
     # -----------------------
@@ -63,9 +62,40 @@ def plot_path(mesh,
             z=vp[:, 2],
             mode="markers",
             marker=dict(size=vp_size, color="red"),
-            name="Viewpoints"
+            name="Viewpoints",
         )
     )
+
+    # -----------------------
+    # Pointing arrows (viewpoint -> viewpoint + pointing_scale * d)
+    # -----------------------
+    if pointing_vectors is not None:
+        viewpoints_arr = np.asarray(viewpoints, dtype=float)
+        pointing_arr = np.asarray(pointing_vectors, dtype=float)
+
+        if pointing_arr.shape != viewpoints_arr.shape:
+            raise ValueError("pointing_vectors must have same shape as viewpoints (M, 3)")
+
+        xs, ys, zs = [], [], []
+        for i in range(viewpoints_arr.shape[0]):
+            p = viewpoints_arr[i]
+            d = pointing_arr[i]
+            p_end = p + pointing_scale * d
+
+            xs.extend([p[0], p_end[0], np.nan])
+            ys.extend([p[1], p_end[1], np.nan])
+            zs.extend([p[2], p_end[2], np.nan])
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=xs,
+                y=ys,
+                z=zs,
+                mode="lines",
+                line=dict(color="red", width=3),
+                name="Pointing",
+            )
+        )
 
     # -----------------------
     # Path
@@ -78,7 +108,7 @@ def plot_path(mesh,
             z=path_coords[:, 2],
             mode="lines",
             line=dict(color="blue", width=4),
-            name="TSP Path"
+            name="TSP Path",
         )
     )
 
@@ -88,19 +118,21 @@ def plot_path(mesh,
     if plot_normals:
         normals = np.asarray(mesh.triangle_normals)
         centroids = vertices[triangles].mean(axis=1)
-        fig.add_trace(go.Cone(
-            x=centroids[:,0],
-            y=centroids[:,1],
-            z=centroids[:,2],
-            u=normals[:,0]*normal_length,
-            v=normals[:,1]*normal_length,
-            w=normals[:,2]*normal_length,
-            colorscale='Blues',
-            showscale=False,
-            sizemode='absolute',
-            sizeref=0.5,
-            name="Normals"
-        ))
+        fig.add_trace(
+            go.Cone(
+                x=centroids[:, 0],
+                y=centroids[:, 1],
+                z=centroids[:, 2],
+                u=normals[:, 0] * normal_length,
+                v=normals[:, 1] * normal_length,
+                w=normals[:, 2] * normal_length,
+                colorscale="Blues",
+                showscale=False,
+                sizemode="absolute",
+                sizeref=0.5,
+                name="Normals",
+            )
+        )
 
     # -----------------------
     # Projection rays: centroid -> nearest viewpoint
@@ -120,7 +152,7 @@ def plot_path(mesh,
                     z=[centroid[2], viewpoint[2]],
                     mode="lines",
                     line=dict(color="green", width=2),
-                    name="Projection" if idx==0 else None
+                    name="Projection" if idx == 0 else None,
                 )
             )
 
@@ -128,7 +160,7 @@ def plot_path(mesh,
     # Final layout
     # -----------------------
     fig.update_layout(
-        scene=dict(aspectmode='data'),
-        legend=dict(itemsizing='constant')
+        scene=dict(aspectmode="data"),
+        legend=dict(itemsizing="constant"),
     )
     fig.show()

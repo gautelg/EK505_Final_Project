@@ -30,6 +30,8 @@ visualization:
   normal_length: 1.0           # scaling factor for normals
   plot_projections: true       # set True to visualize centroid -> viewpoint rays
   projection_subsample: 50     # draw projection lines for every Nth centroid
+  plot_pointing: true          # whether to draw pointing arrows
+  pointing_scale: 2.0          # length of the arrow in meters
 
 clustering:
   enable: true

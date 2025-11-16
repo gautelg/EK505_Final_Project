@@ -16,6 +16,7 @@ def run_full_pipeline(config):
     path = None
     safe_waypoints = None
     trajectory = None
+    pointing_vectors = None
 
     # -----------------------------
     # GEOMETRY
@@ -49,7 +50,7 @@ def run_full_pipeline(config):
         ):
             from src.pipeline.run_collision_free_path import run_collision_free_path
             logging.info("[SYSTEM] Running collision-free path planning...")
-            safe_waypoints, trajectory = run_collision_free_path(
+            safe_waypoints, trajectory, pointing_vectors = run_collision_free_path(
                 config, mesh, centroids, normals, viewpoints, path
             )
         else:
@@ -86,6 +87,10 @@ def run_full_pipeline(config):
     if system_cfg.get("visualize", True):
         from src.visualization.visualize import plot_path
 
+        vis_cfg = config["visualization"]
+        plot_pointing = vis_cfg.get("plot_pointing", False)
+        pointing_scale = vis_cfg.get("pointing_scale", 2.0)
+
         # Prefer collision-free path if we have it
         if mesh is not None and safe_waypoints is not None:
             logging.info("[SYSTEM] Visualizing collision-free path...")
@@ -96,11 +101,13 @@ def run_full_pipeline(config):
                 mesh,
                 vp_vis,
                 path_vis,
-                vp_size=config["visualization"]["viewpoint_size"],
-                plot_normals=config["visualization"]["plot_normals"],
-                normal_length=config["visualization"]["normal_length"],
-                plot_projections=config["visualization"]["plot_projections"],
-                projection_subsample=config["visualization"]["projection_subsample"],
+                vp_size=vis_cfg["viewpoint_size"],
+                plot_normals=vis_cfg["plot_normals"],
+                normal_length=vis_cfg["normal_length"],
+                plot_projections=vis_cfg["plot_projections"],
+                projection_subsample=vis_cfg["projection_subsample"],
+                pointing_vectors=pointing_vectors if (plot_pointing and pointing_vectors is not None) else None,
+                pointing_scale=pointing_scale,
             )
 
         elif mesh is not None and viewpoints is not None and path is not None:
@@ -109,11 +116,13 @@ def run_full_pipeline(config):
                 mesh,
                 viewpoints,
                 path,
-                vp_size=config["visualization"]["viewpoint_size"],
-                plot_normals=config["visualization"]["plot_normals"],
-                normal_length=config["visualization"]["normal_length"],
-                plot_projections=config["visualization"]["plot_projections"],
-                projection_subsample=config["visualization"]["projection_subsample"],
+                vp_size=vis_cfg["viewpoint_size"],
+                plot_normals=vis_cfg["plot_normals"],
+                normal_length=vis_cfg["normal_length"],
+                plot_projections=vis_cfg["plot_projections"],
+                projection_subsample=vis_cfg["projection_subsample"],
+                pointing_vectors=None,
+                pointing_scale=pointing_scale,
             )
         else:
             logging.warning("[SYSTEM] Not enough data to visualize.")
