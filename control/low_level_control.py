@@ -2,6 +2,17 @@ import time
 import numpy as np
 import mujoco
 import mujoco.viewer
+import json
+
+SCALE = 0.1  # scale down the viewpoints
+
+with open('optimized_viewpoints.json', 'r') as f:
+    file = json.load(f)
+
+VP_RAW = np.asarray(file.get('viewpoints', []), dtype=float)
+
+VIEWPOINTS = [p * SCALE for p in VP_RAW]
+
 
 model = mujoco.MjModel.from_xml_path('robot.xml')
 data  = mujoco.MjData(model)
@@ -20,6 +31,18 @@ def index_map(model):
     return act
 
 ACT = index_map(model)
+
+
+# ---- Thruster burn stats ----
+THRUSTER_NAMES = ["thruster_px","thruster_nx","thruster_py","thruster_ny","thruster_pz","thruster_nz"]
+THRUSTER_IDS   = [ACT[nm] for nm in THRUSTER_NAMES]
+
+FIRE_THRESH = 0.1
+burn_time_s = np.zeros(6, dtype=float)   # burn time per thruster
+last_ctrl  = np.zeros(model.nu, dtype=float)
+
+
+
 
 # ---------- init the ball pose & velocity ----------
 ball_jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "ball_free")
@@ -78,9 +101,7 @@ def quat_mul(qa, qb):
     ])
 
 def attitude_error_vec(q_current, q_des):
-    """
-    Compute attitude error vector from current to desired quaternion.
-    """
+    """ Compute attitude error vector from current to desired quaternion."""
     q_err = quat_mul(q_des, quat_conj(q_current))
 
     # Ensure shortest rotation
@@ -97,15 +118,25 @@ def step_until(target_sim_time):
         steps += 1
     return steps
 
-# --- reference: desired pose/velocity (world frame) ---
-def ref(input):
 
-    pW_des  = np.zeros(3)                 # expected position
-    pW_des  = np.array([2.0, -3.0, 1.0])
-    vW_des  = np.zeros(3)                 # expected velocity
-    qWB_des = np.array([0.70710678, 0.70710678, 0.0, 0.0])  # expected quaternion
-    # qWB_des = np.array([1.0, 0.0, 0.0, 0.0])
-    wB_des  = np.zeros(3)                 # expected angular velocity
+def ref(inp):
+
+    arr = np.asarray(inp, dtype=float).reshape(-1)
+
+    pW_des  = arr[0:3].copy()
+    vW_des  = arr[3:6].copy()
+
+    q = arr[6:10].copy()
+    n = np.linalg.norm(q)
+
+    q = q / n
+
+    if q[0] < 0:
+        q = -q
+    
+    qWB_des = q
+    wB_des  = arr[10:13].copy()
+
     return pW_des, vW_des, qWB_des, wB_des
 
 
@@ -173,6 +204,16 @@ def controller(model, data, input):
 
     return u
 
+# ---- viewpoint following state ----
+vp_idx        = 0                  # reached VP index
+POS_DONE_TOL  = 0.02
+VEL_DONE_TOL  = 0.05
+STOP_TIME    = 0.30
+stop_flag  = None
+
+def reached(p, v, goal):
+    ep = p - goal
+    return (np.linalg.norm(ep) < POS_DONE_TOL) and (np.linalg.norm(v) < VEL_DONE_TOL)
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
     # Camera setup
@@ -197,8 +238,35 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
         if now >= next_ctrl:
             # Use simulation time as the controller’s independent variable for stability
             t_sim = data.time
-            u = controller(model, data, t_sim)
+            
+
+            # ------- build desired input from current viewpoint -------
+           
+            p_curr = np.array(data.qpos[robot_qpos_adr : robot_qpos_adr+3])
+            v_curr = np.array(data.qvel[robot_qvel_adr : robot_qvel_adr+3])
+
+            # when reached, stop for a while
+            if reached(p_curr, v_curr, VIEWPOINTS[vp_idx]):
+                if stop_flag is None:
+                    stop_flag = data.time + STOP_TIME
+                # next point
+                if data.time >= stop_flag:
+                    if vp_idx < len(VIEWPOINTS) - 1:
+                        vp_idx += 1
+
+                    stop_flag = None
+
+            # 目标位置取当前 waypoint；速度/角速度=0；姿态保持初始朝向
+            p_goal = VIEWPOINTS[vp_idx]
+            v_goal = np.array([0.0, 0.0, 0.0])
+            q_goal = np.array([1.0, 0.0, 0.0, 0.0])  # no rotation
+            w_goal = np.array([0.0, 0.0, 0.0])
+
+            desired = np.concatenate([p_goal, v_goal, q_goal, w_goal])
+            u = controller(model, data, desired)
+
             data.ctrl[:] = u
+            last_ctrl = u.copy() 
 
             next_ctrl += 1.0 / CONTROL_HZ
             # Prevent excessive drift if the system lags
@@ -207,7 +275,18 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
 
         # (2) Physics stepping: chase the wall-clock target without overshoot
         target_sim_time = t0_sim + (now - t0_wall) * RUN_SPEED
-        step_until(target_sim_time)
+        steps = step_until(target_sim_time)
+
+        if steps > 0:
+            dt_sum = steps * DT
+            # record thruster burn time
+            for i, aid in enumerate(THRUSTER_IDS):
+                if aid >= 0 and last_ctrl[aid] > FIRE_THRESH:
+                    burn_time_s[i] += dt_sum
+
+        print("\n=== Thruster usage summary ===")
+        for i, nm in enumerate(THRUSTER_NAMES):
+            print(f"{nm}  time = {burn_time_s[i]:8.3f} s")
 
         # (3) Rendering
         if now >= next_render:
