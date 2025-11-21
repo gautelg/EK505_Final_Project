@@ -45,13 +45,13 @@ last_ctrl  = np.zeros(model.nu, dtype=float)
 
 
 # ---------- init the ball pose & velocity ----------
-ball_jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "ball_free")
-ball_qpos_adr = model.jnt_qposadr[ball_jid]   
-ball_qvel_adr = model.jnt_dofadr[ball_jid]    
+iss_jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "iss_free")
+iss_qpos_adr = model.jnt_qposadr[iss_jid]
+# iss_qvel_adr = model.jnt_dofadr[iss_jid] 
 
 
-data.qpos[ball_qpos_adr:ball_qpos_adr+3]   = np.array([1.8, 0.2, 0.2])  
-data.qvel[ball_qvel_adr:ball_qvel_adr+3]   = np.array([0.0, 0.0, 0.0])  
+data.qpos[iss_qpos_adr:iss_qpos_adr+3]   = np.array([0.0, 0.0, 0.0])  
+# data.qvel[iss_qvel_adr:iss_qvel_adr+3]   = np.array([0.0, 0.0, 0.0])
 
 
 
@@ -217,7 +217,7 @@ def reached(p, v, goal):
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
     # Camera setup
-    viewer.cam.distance  = 10.0
+    viewer.cam.distance  = 100.0
     viewer.cam.type      = mujoco.mjtCamera.mjCAMERA_FREE
     viewer.cam.lookat    = [0, 0, 0]
     viewer.cam.azimuth   = 90

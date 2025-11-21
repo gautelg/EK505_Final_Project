@@ -2,18 +2,21 @@
   <compiler angle="degree"/>
   <option gravity="0 0 0" integrator="RK4" timestep="0.002"/>
 
+  <asset>
+    <mesh name="iss_mesh" file="ISS_Stationary_Bare.stl" scale="1 1 1"/>
+  </asset>
+
   <worldbody>
       <!-- impact ball -->
-    <body name="ball" pos="1.8 0.0 0.0">
+    <body name="iss_body" pos="5.0 0.0 0.0">
         
-        <freejoint name="ball_free"/>
+        <freejoint name="iss_free"/>
         
-        <geom name="ball_geom" type="sphere" size="0.08"
-            rgba="1 0.6 0.2 1"
-            mass="1.0"
-            friction="0.6 0.005 0.0001"
-            solref="0.01 1"
-            solimp="0.9 0.95 0.001"/>
+        <geom name="iss_geom" type="mesh" mesh="iss_mesh"
+            rgba="0.9 0.9 0.9 1"
+            mass="1000.0"
+            contype="0"
+            conaffinity="0"/>
     </body>
 
     <!-- main body: 0.6 m cube, mass=25 kg -->
