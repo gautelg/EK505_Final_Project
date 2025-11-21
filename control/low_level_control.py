@@ -256,7 +256,7 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
 
                     stop_flag = None
 
-            # 目标位置取当前 waypoint；速度/角速度=0；姿态保持初始朝向
+            # set the reference positions, vel/ang_vel and attitude stay unchanged
             p_goal = VIEWPOINTS[vp_idx]
             v_goal = np.array([0.0, 0.0, 0.0])
             q_goal = np.array([1.0, 0.0, 0.0, 0.0])  # no rotation
