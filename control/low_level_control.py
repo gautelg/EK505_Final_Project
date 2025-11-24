@@ -4,15 +4,27 @@ import mujoco
 import mujoco.viewer
 import json
 
-SCALE = 0.1  # scale down the viewpoints
+SCALE = 1.0  # scale down the viewpoints
 
 with open('optimized_viewpoints.json', 'r') as f:
     file = json.load(f)
 
-VP_RAW = np.asarray(file.get('viewpoints', []), dtype=float)
+WPS = file.get("waypoints", [])
 
-VIEWPOINTS = [p * SCALE for p in VP_RAW]
+if not WPS:
+    raise RuntimeError("optimized_viewpoints.json has no 'waypoints' entries")
 
+VP_POS   = np.asarray([wp["pos"] for wp in WPS], dtype=float)
+VP_VEL   = np.asarray([wp.get("vel",   [0.0, 0.0, 0.0]) for wp in WPS], dtype=float)
+VP_QUAT  = np.asarray([wp.get("quat",  [1.0, 0.0, 0.0, 0.0]) for wp in WPS], dtype=float)
+VP_OMEGA = np.asarray([wp.get("omega", [0.0, 0.0, 0.0]) for wp in WPS], dtype=float)
+
+VIEWPOINTS_POS   = [p * SCALE for p in VP_POS]
+VIEWPOINTS_VEL   = [v for v in VP_VEL]      # keep as-is for now
+VIEWPOINTS_QUAT  = [q for q in VP_QUAT]
+VIEWPOINTS_OMEGA = [w for w in VP_OMEGA]
+
+# ----------------- Mujoco model setup -----------------
 
 model = mujoco.MjModel.from_xml_path('robot.xml')
 data  = mujoco.MjData(model)
@@ -246,21 +258,21 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
             v_curr = np.array(data.qvel[robot_qvel_adr : robot_qvel_adr+3])
 
             # when reached, stop for a while
-            if reached(p_curr, v_curr, VIEWPOINTS[vp_idx]):
+            if reached(p_curr, v_curr, VIEWPOINTS_POS[vp_idx]):
                 if stop_flag is None:
                     stop_flag = data.time + STOP_TIME
                 # next point
                 if data.time >= stop_flag:
-                    if vp_idx < len(VIEWPOINTS) - 1:
+                    if vp_idx < len(VIEWPOINTS_POS) - 1:
                         vp_idx += 1
 
                     stop_flag = None
 
-            # set the reference positions, vel/ang_vel and attitude stay unchanged
-            p_goal = VIEWPOINTS[vp_idx]
-            v_goal = np.array([0.0, 0.0, 0.0])
-            q_goal = np.array([1.0, 0.0, 0.0, 0.0])  # no rotation
-            w_goal = np.array([0.0, 0.0, 0.0])
+            # set the reference positions
+            p_goal = VIEWPOINTS_POS[vp_idx]
+            v_goal = VIEWPOINTS_VEL[vp_idx]
+            q_goal = VIEWPOINTS_QUAT[vp_idx]
+            w_goal = VIEWPOINTS_OMEGA[vp_idx]
 
             desired = np.concatenate([p_goal, v_goal, q_goal, w_goal])
             u = controller(model, data, desired)

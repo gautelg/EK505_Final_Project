@@ -3,32 +3,37 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, List
 
 import numpy as np
 
 from src.control.pointing import compute_pointing_vectors
-
 from src.geometry.collision import build_collision_checker_from_geometry
 from src.control.collision_avoidance import (
     compute_station_center,
     make_collision_free_path,
 )
 
-from src.control.trajectory import build_trajectory, Trajectory
+# NEW: import the waypoint-state tools (quaternions etc.)
+from src.control.trajectory import (
+    WaypointState,
+    build_waypoint_states,
+    pack_states_for_export,
+)
+
+# NEW: import the impulsive OCP solver (you will implement this next)
+from src.control.ivt_optimizer import solve_ivt_ocp
+
 
 def _get_output_dir(config: Dict[str, Any]) -> Path:
     """
     Resolve the output directory from config, defaulting to 'data/outputs'.
     """
-    # OLD:
-    # paths_cfg = config.get("paths", {})
-    # out_dir = paths_cfg.get("output_dir", "data/outputs")
-
     out_dir = config.get("output_folder", "data/outputs/")
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     return out_path
+
 
 def _build_ordered_waypoints(
     viewpoints: np.ndarray,
@@ -74,38 +79,28 @@ def run_collision_free_path(
     normals: np.ndarray,
     viewpoints: np.ndarray,
     path: np.ndarray,
-) -> Tuple[np.ndarray, Trajectory, np.ndarray]:
+) -> Tuple[np.ndarray, List[WaypointState], np.ndarray]:
     """
     High-level pipeline:
 
       1. Build collision checker from mesh/centroids/normals.
       2. Build ordered waypoints from viewpoints and TSP path.
       3. Use collision_avoidance.make_collision_free_path to insert via points.
-      4. Time-parameterize the safe path to build a Trajectory.
-      5. Export safe waypoints + trajectory meta-data for the controller.
-
-    Parameters
-    ----------
-    config : dict
-        Global configuration dictionary (parsed from settings.yaml).
-    mesh : o3d.geometry.TriangleMesh
-        Convex hull mesh from run_geometry.
-    centroids : np.ndarray
-        Face centroids from run_geometry, shape (N_face, 3).
-    normals : np.ndarray
-        Face normals from run_geometry, shape (N_face, 3).
-    viewpoints : np.ndarray
-        Viewpoint positions from run_viewpoints, shape (N_vp, 3).
-    path : np.ndarray
-        TSP path indices into viewpoints, shape (N_path,).
+      4. Compute pointing vectors for each safe waypoint.
+      5. Run impulsive fuel/time optimization (if enabled).
+      6. Build per-waypoint states (pos, vel, quat, omega) and export JSON.
 
     Returns
     -------
     safe_waypoints : np.ndarray
         Collision-free waypoint list of shape (M, 3), M >= N_path.
-    trajectory : Trajectory
-        Time-parameterized Trajectory object.
+    waypoint_states : list[WaypointState]
+        Discrete per-visit states (position, velocity, quaternion, omega).
+    pointing_vectors : np.ndarray
+        Pointing vectors used to build orientations, shape (M, 3).
     """
+    system_cfg = config.get("system", {})
+
     # 1) Collision checker
     collision_checker = build_collision_checker_from_geometry(
         mesh, centroids=centroids, normals=normals
@@ -145,6 +140,7 @@ def run_collision_free_path(
         f"(from {ordered_waypoints.shape[0]} original)."
     )
 
+    # 4) Pointing vectors (world-frame directions for camera)
     pointing_vectors = compute_pointing_vectors(
         waypoints=safe_waypoints,
         centroids=centroids,
@@ -152,33 +148,57 @@ def run_collision_free_path(
         tol=1e-3,
     )
 
-    # 4) Trajectory configuration
-    traj_cfg = config.get("trajectory", {})
-    cruise_speed = float(traj_cfg.get("cruise_speed", 0.05))  # m/s
-    dwell_time = traj_cfg.get("dwell_time", 0.0)              # can be scalar or list
-
-    logging.info(
-        f"[CollisionFreePath] Trajectory params: cruise_speed={cruise_speed}, "
-        f"dwell_time={dwell_time}"
-    )
-
-    trajectory = build_trajectory(
-        waypoints=safe_waypoints,
-        cruise_speed=cruise_speed,
-        dwell_times=dwell_time,
-        orientations=None,
-    )
-
-    # 5) Export to disk
     out_dir = _get_output_dir(config)
     _export_safe_waypoints(out_dir, safe_waypoints)
-    _export_trajectory(out_dir, trajectory, pointing_vectors)
 
-    logging.info(
-        f"[CollisionFreePath] Exported collision-free path and trajectory to {out_dir}"
+    # 5) Impulsive optimization (fuel/time), if enabled
+    ctrl_cfg = config.get("control", {})
+    run_opt = system_cfg.get("run_optimization", False)
+
+    if run_opt:
+        logging.info("[CollisionFreePath] Running impulsive fuel/time optimization...")
+        # Initial state: start at first safe waypoint with zero relative velocity
+        x0 = np.zeros(6, dtype=float)
+        x0[0:3] = safe_waypoints[0]
+
+        # Solve the OCP. You will implement this in src/control/ivt_optimizer.py
+        visit_positions, visit_velocities, metrics = solve_ivt_ocp(
+            safe_waypoints,         # positions to visit (collision-free)
+            x0,                     # initial state [r0, v0]
+            ctrl_cfg,               # dict with w_fuel, w_time, delta_v_max, etc.
+            collision_checker,      # collision checker
+            station_center          # center of the station
+        )
+    else:
+        logging.info(
+            "[CollisionFreePath] run_optimization=False, "
+            "using safe_waypoints with zero velocity as a trivial trajectory."
+        )
+        visit_positions = safe_waypoints.copy()
+        visit_velocities = np.zeros_like(safe_waypoints)
+        metrics = {
+            "fuel_used": 0.0,
+            "time_total": 0.0,
+            "delta_v_list": [],
+            "t_leg_list": [],
+        }
+
+    # 6) Build per-waypoint states (pos, vel, quat, omega) and export
+    waypoint_states = build_waypoint_states(
+        positions=visit_positions,
+        velocities=visit_velocities,
+        pointing_vectors=pointing_vectors,
+        up_hint=np.array([0.0, 0.0, 1.0]),
     )
 
-    return safe_waypoints, trajectory, pointing_vectors
+    _export_optimized_viewpoints(out_dir, waypoint_states, metrics)
+
+    logging.info(
+        f"[CollisionFreePath] Exported safe waypoints and optimized "
+        f"viewpoints to {out_dir}"
+    )
+
+    return safe_waypoints, waypoint_states, pointing_vectors
 
 
 def _export_safe_waypoints(out_dir: Path, waypoints: np.ndarray) -> None:
@@ -195,20 +215,41 @@ def _export_safe_waypoints(out_dir: Path, waypoints: np.ndarray) -> None:
     logging.info(f"[CollisionFreePath] Saved safe waypoints to {path}")
 
 
-def _export_trajectory(out_dir: Path, traj: Trajectory, pointing_vectors: np.ndarray) -> None:
-    path = out_dir / "trajectory.json"
+def _export_optimized_viewpoints(
+    out_dir: Path,
+    states: List[WaypointState],
+    metrics: Dict[str, Any],
+) -> None:
+    """
+    Export fully specified viewpoint states for the low-level controller.
+
+    Each waypoint has:
+      - pos:  [x, y, z]
+      - vel:  [vx, vy, vz]
+      - quat: [w, x, y, z] (world<-body)
+      - omega:[wx, wy, wz] (here zero)
+    """
+    pos_arr, vel_arr, quat_arr, omega_arr = pack_states_for_export(states)
+    N = pos_arr.shape[0]
+
+    waypoints = []
+    for i in range(N):
+        waypoints.append(
+            {
+                "pos": pos_arr[i].tolist(),
+                "vel": vel_arr[i].tolist(),
+                "quat": quat_arr[i].tolist(),
+                "omega": omega_arr[i].tolist(),
+            }
+        )
 
     data = {
-        "waypoints": traj.waypoints.tolist(),
-        "arrival_times": traj.arrival_times.tolist(),
-        "dwell_times": traj.dwell_times.tolist(),
-        "total_time": traj.total_time,
-        "orientations": traj.orientations.tolist(),
-        "pointing_vectors": pointing_vectors.tolist(),
+        "waypoints": waypoints,
+        "metrics": metrics,
     }
 
+    path = out_dir / "optimized_viewpoints.json"
     with path.open("w") as f:
         json.dump(data, f, indent=2)
 
-    logging.info(f"[CollisionFreePath] Saved trajectory to {path}")
-
+    logging.info(f"[CollisionFreePath] Saved optimized viewpoints to {path}")

@@ -1,359 +1,258 @@
 # src/control/trajectory.py
 
 import logging
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import Optional, List, Tuple
 
 import numpy as np
 
 
+# -----------------------------
+# Quaternion utilities
+# -----------------------------
+
 def _normalize_quaternion(q: np.ndarray) -> np.ndarray:
-    """Normalize a quaternion [w, x, y, z]."""
+    """
+    Normalize a quaternion [w, x, y, z].
+
+    Returns identity [1,0,0,0] if the norm is too small.
+    """
     q = np.asarray(q, dtype=float)
-    norm = np.linalg.norm(q)
-    if norm < 1e-12:
-        # Fallback to identity if something is badly wrong
+    n = np.linalg.norm(q)
+    if n < 1e-12:
         return np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
-    return q / norm
+    return q / n
 
 
-def _slerp(q0: np.ndarray, q1: np.ndarray, s: float) -> np.ndarray:
+def _rotmat_to_quat(R: np.ndarray) -> np.ndarray:
     """
-    Spherical linear interpolation between two quaternions.
+    Convert a 3x3 rotation matrix R (world <- body) to quaternion [w,x,y,z].
 
-    Parameters
-    ----------
-    q0, q1 : np.ndarray
-        Quaternions [w, x, y, z].
-    s : float
-        Interpolation parameter in [0, 1].
-
-    Returns
-    -------
-    np.ndarray
-        Interpolated quaternion [w, x, y, z].
+    Assumes R is a proper rotation (det ~ 1, orthonormal).
     """
-    q0 = _normalize_quaternion(q0)
-    q1 = _normalize_quaternion(q1)
-    s = float(s)
+    R = np.asarray(R, dtype=float)
+    if R.shape != (3, 3):
+        raise ValueError("R must be 3x3")
 
-    dot = float(np.dot(q0, q1))
+    trace = float(np.trace(R))
 
-    # Ensure shortest path
-    if dot < 0.0:
-        q1 = -q1
-        dot = -dot
-
-    # If very close, fall back to linear interpolation
-    if dot > 0.9995:
-        result = (1.0 - s) * q0 + s * q1
-        return _normalize_quaternion(result)
-
-    # Slerp
-    theta_0 = np.arccos(dot)          # angle between
-    sin_theta_0 = np.sin(theta_0)
-
-    theta = theta_0 * s
-    sin_theta = np.sin(theta)
-
-    s0 = np.cos(theta) - dot * sin_theta / sin_theta_0
-    s1 = sin_theta / sin_theta_0
-
-    result = s0 * q0 + s1 * q1
-    return _normalize_quaternion(result)
-
-
-def compute_segment_times(
-    waypoints: np.ndarray,
-    cruise_speed: float,
-    dwell_times: Optional[np.ndarray] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-    """
-    Compute travel times between waypoints and arrival times at each waypoint.
-
-    We assume:
-      - Straight-line motion between waypoints at constant speed 'cruise_speed'.
-      - Optional dwell time at each waypoint (e.g., for inspection).
-
-    Time model:
-      - arrival_times[0] = 0
-      - At waypoint i:
-          dwell for dwell_times[i]
-          then travel to waypoint i+1 with travel_time[i]
-      - arrival_times[i+1] = arrival_times[i] + dwell_times[i] + travel_time[i]
-      - Total time includes dwell at the final waypoint:
-          total_time = arrival_times[-1] + dwell_times[-1]
-
-    Parameters
-    ----------
-    waypoints : np.ndarray
-        Array of shape (N, 3) with ordered waypoint positions.
-    cruise_speed : float
-        Desired constant travel speed between waypoints (m/s).
-    dwell_times : np.ndarray or None
-        If None, no dwell time at any waypoint.
-        If scalar-like, will be broadcast to all waypoints.
-        If array of shape (N,), used per waypoint.
-
-    Returns
-    -------
-    segment_times : np.ndarray
-        Travel times per segment, shape (N-1,).
-    arrival_times : np.ndarray
-        Arrival times at each waypoint (start of dwell), shape (N,).
-    dwell_times_arr : np.ndarray
-        Dwell time per waypoint, shape (N,).
-    total_time : float
-        Total trajectory duration including final dwell.
-    """
-    waypoints = np.asarray(waypoints, dtype=float)
-    if waypoints.ndim != 2 or waypoints.shape[1] != 3:
-        raise ValueError("waypoints must be of shape (N, 3)")
-
-    N = waypoints.shape[0]
-    if N < 1:
-        raise ValueError("Need at least one waypoint")
-    if cruise_speed <= 0.0:
-        raise ValueError("cruise_speed must be > 0")
-
-    # Distances and segment travel times
-    if N == 1:
-        segment_times = np.zeros(0, dtype=float)
+    if trace > 0.0:
+        s = np.sqrt(trace + 1.0) * 2.0  # s = 4 * w
+        w = 0.25 * s
+        x = (R[2, 1] - R[1, 2]) / s
+        y = (R[0, 2] - R[2, 0]) / s
+        z = (R[1, 0] - R[0, 1]) / s
     else:
-        diffs = waypoints[1:] - waypoints[:-1]                # (N-1, 3)
-        dists = np.linalg.norm(diffs, axis=1)                 # (N-1,)
-        segment_times = dists / cruise_speed                  # (N-1,)
-
-    # Dwell times: broadcast / default
-    if dwell_times is None:
-        dwell_times_arr = np.zeros(N, dtype=float)
-    else:
-        dwell_times_arr = np.asarray(dwell_times, dtype=float)
-        if dwell_times_arr.ndim == 0:
-            dwell_times_arr = np.full(N, float(dwell_times_arr), dtype=float)
-        elif dwell_times_arr.shape != (N,):
-            raise ValueError(
-                f"dwell_times must be scalar or shape (N,), got shape {dwell_times_arr.shape}"
-            )
-
-    arrival_times = np.zeros(N, dtype=float)
-    for i in range(N - 1):
-        arrival_times[i + 1] = (
-            arrival_times[i] + dwell_times_arr[i] + segment_times[i]
-        )
-
-    total_time = arrival_times[-1] + dwell_times_arr[-1]
-
-    logging.info(
-        f"[Trajectory] Computed segment times for {N} waypoints: "
-        f"total_time = {total_time:.2f} s"
-    )
-
-    return segment_times, arrival_times, dwell_times_arr, float(total_time)
-
-
-class Trajectory:
-    """
-    Time-parameterized trajectory over a sequence of waypoints.
-
-    Provides evaluate(t) -> (p_des, v_des, q_des, w_des), where:
-
-      - p_des: desired world position (3,)
-      - v_des: desired world velocity (3,)
-      - q_des: desired world<-body quaternion [w, x, y, z]
-      - w_des: desired angular velocity in body or world frame (here: zero)
-
-    Motion model:
-      - At waypoint i:
-          dwell from arrival_times[i] to arrival_times[i] + dwell_times[i]
-          (holding position/orientation, zero velocity/angular velocity)
-      - Then move linearly to waypoint i+1 with constant velocity over
-        segment_times[i].
-    """
-
-    def __init__(
-        self,
-        waypoints: np.ndarray,
-        orientations: Optional[np.ndarray],
-        segment_times: np.ndarray,
-        arrival_times: np.ndarray,
-        dwell_times: np.ndarray,
-        total_time: float,
-    ):
-        waypoints = np.asarray(waypoints, dtype=float)
-        if waypoints.ndim != 2 or waypoints.shape[1] != 3:
-            raise ValueError("waypoints must be of shape (N, 3)")
-
-        self.waypoints = waypoints
-        self.N = waypoints.shape[0]
-
-        # Orientation handling
-        if orientations is None:
-            # Default: identity quaternion at all waypoints
-            self.orientations = np.tile(
-                np.array([1.0, 0.0, 0.0, 0.0], dtype=float), (self.N, 1)
-            )
+        # Find the major diagonal element
+        if (R[0, 0] > R[1, 1]) and (R[0, 0] > R[2, 2]):
+            s = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0  # s = 4*x
+            w = (R[2, 1] - R[1, 2]) / s
+            x = 0.25 * s
+            y = (R[0, 1] + R[1, 0]) / s
+            z = (R[0, 2] + R[2, 0]) / s
+        elif R[1, 1] > R[2, 2]:
+            s = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0  # s = 4*y
+            w = (R[0, 2] - R[2, 0]) / s
+            x = (R[0, 1] + R[1, 0]) / s
+            y = 0.25 * s
+            z = (R[1, 2] + R[2, 1]) / s
         else:
-            orientations = np.asarray(orientations, dtype=float)
-            if orientations.shape != (self.N, 4):
-                raise ValueError(
-                    f"orientations must be shape (N, 4), got {orientations.shape}"
-                )
-            # Normalize all quaternions
-            self.orientations = np.vstack(
-                [_normalize_quaternion(q) for q in orientations]
-            )
+            s = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0  # s = 4*z
+            w = (R[1, 0] - R[0, 1]) / s
+            x = (R[0, 2] + R[2, 0]) / s
+            y = (R[1, 2] + R[2, 1]) / s
+            z = 0.25 * s
 
-        self.segment_times = np.asarray(segment_times, dtype=float)
-        self.arrival_times = np.asarray(arrival_times, dtype=float)
-        self.dwell_times = np.asarray(dwell_times, dtype=float)
-        self.total_time = float(total_time)
-
-        if self.segment_times.shape[0] != self.N - 1 and self.N > 1:
-            raise ValueError(
-                "segment_times must have length N-1 where N is number of waypoints"
-            )
-
-        # Precompute segment start/end times (for interpolation)
-        if self.N > 1:
-            self.segment_starts = self.arrival_times[:-1] + self.dwell_times[:-1]
-            self.segment_ends = self.arrival_times[1:]
-        else:
-            self.segment_starts = np.zeros(0, dtype=float)
-            self.segment_ends = np.zeros(0, dtype=float)
-
-        logging.info(
-            f"[Trajectory] Trajectory initialized with {self.N} waypoints, "
-            f"total_time = {self.total_time:.2f} s"
-        )
-
-    def evaluate(self, t: float):
-        """
-        Evaluate desired state at time t.
-
-        Parameters
-        ----------
-        t : float
-            Time in seconds since start. Values outside [0, total_time]
-            are clamped.
-
-        Returns
-        -------
-        p_des : np.ndarray
-            Desired position (3,).
-        v_des : np.ndarray
-            Desired velocity (3,).
-        q_des : np.ndarray
-            Desired quaternion [w, x, y, z].
-        w_des : np.ndarray
-            Desired angular velocity (3,). Here set to zero.
-        """
-        if self.N == 1:
-            # Single waypoint: hold position/orientation forever
-            p = self.waypoints[0]
-            q = self.orientations[0]
-            v = np.zeros(3, dtype=float)
-            w = np.zeros(3, dtype=float)
-            return p, v, q, w
-
-        # Clamp time to [0, total_time]
-        t = float(np.clip(t, 0.0, self.total_time))
-
-        # 1) Check if we're in a dwell interval
-        for i in range(self.N):
-            dwell_start = self.arrival_times[i]
-            dwell_end = dwell_start + self.dwell_times[i]
-            if self.dwell_times[i] > 0.0 and dwell_start <= t < dwell_end:
-                p = self.waypoints[i]
-                q = self.orientations[i]
-                v = np.zeros(3, dtype=float)
-                w = np.zeros(3, dtype=float)
-                return p, v, q, w
-
-        # 2) Otherwise, find the segment we are in
-        # segment i: from waypoint i to i+1, between segment_starts[i] and segment_ends[i]
-        # We can find the first segment_end >= t
-        idx = int(np.searchsorted(self.segment_ends, t, side="right")) - 1
-        idx = max(0, min(idx, self.N - 2))  # clamp to valid segment index
-
-        t_start = self.segment_starts[idx]
-        t_end = self.segment_ends[idx]
-        if t_end <= t_start:
-            # Degenerate case: zero-length segment; treat as dwell at waypoint idx+1
-            p = self.waypoints[idx + 1]
-            q = self.orientations[idx + 1]
-            v = np.zeros(3, dtype=float)
-            w = np.zeros(3, dtype=float)
-            return p, v, q, w
-
-        # Interpolation factor s in [0, 1]
-        s = (t - t_start) / (t_end - t_start)
-        s = float(np.clip(s, 0.0, 1.0))
-
-        p0 = self.waypoints[idx]
-        p1 = self.waypoints[idx + 1]
-        q0 = self.orientations[idx]
-        q1 = self.orientations[idx + 1]
-
-        # Position and velocity
-        p = (1.0 - s) * p0 + s * p1
-        # Constant velocity along the segment
-        segment_duration = t_end - t_start
-        v = (p1 - p0) / segment_duration
-
-        # Orientation via slerp; angular velocity set to zero for simplicity
-        q = _slerp(q0, q1, s)
-        w = np.zeros(3, dtype=float)
-
-        return p, v, q, w
+    q = np.array([w, x, y, z], dtype=float)
+    return _normalize_quaternion(q)
 
 
-def build_trajectory(
-    waypoints: np.ndarray,
-    cruise_speed: float,
-    dwell_times: Optional[np.ndarray] = None,
-    orientations: Optional[np.ndarray] = None,
-) -> Trajectory:
+# -----------------------------
+# Waypoint orientation from pointing vectors
+# -----------------------------
+
+def compute_orientations_from_pointing(
+    pointing_vectors: np.ndarray,
+    up_hint: Optional[np.ndarray] = None,
+) -> np.ndarray:
     """
-    High-level helper: from waypoints (and optional orientations), build a
-    time-parameterized Trajectory object.
+    Given a pointing direction in world frame for each waypoint, compute
+    a world<-body quaternion that makes the body +X axis point along
+    the desired direction, while keeping the body "up" reasonably aligned
+    with a world up vector.
 
     Parameters
     ----------
-    waypoints : np.ndarray
-        Array of shape (N, 3) with ordered waypoint positions.
-    cruise_speed : float
-        Desired constant speed between waypoints (m/s).
-    dwell_times : np.ndarray or None
-        Dwell times at each waypoint. If None, no dwell.
-        If scalar-like, applied to all waypoints.
-        If array, must be shape (N,).
-    orientations : np.ndarray or None
-        Optional quaternions per waypoint, shape (N, 4), [w, x, y, z].
-        If None, identity quaternion is used everywhere.
+    pointing_vectors : (N, 3) array
+        Unit pointing directions in world frame for each waypoint.
+        These should be the output of compute_pointing_vectors(...)
+        in pointing.py.
+    up_hint : (3,) array or None
+        World-frame "up" direction used to resolve roll. If None,
+        defaults to [0, 0, 1].
 
     Returns
     -------
-    Trajectory
-        Trajectory instance with evaluate(t) method.
+    quats : (N, 4) array
+        World<-body quaternions [w, x, y, z] for each waypoint.
     """
-    (
-        segment_times,
-        arrival_times,
-        dwell_times_arr,
-        total_time,
-    ) = compute_segment_times(
-        waypoints=waypoints,
-        cruise_speed=cruise_speed,
-        dwell_times=dwell_times,
-    )
+    dirs = np.asarray(pointing_vectors, dtype=float)
+    if dirs.ndim != 2 or dirs.shape[1] != 3:
+        raise ValueError("pointing_vectors must be shape (N, 3)")
 
-    traj = Trajectory(
-        waypoints=waypoints,
-        orientations=orientations,
-        segment_times=segment_times,
-        arrival_times=arrival_times,
-        dwell_times=dwell_times_arr,
-        total_time=total_time,
-    )
+    N = dirs.shape[0]
+    if up_hint is None:
+        up_hint = np.array([0.0, 0.0, 1.0], dtype=float)
+    up_hint = np.asarray(up_hint, dtype=float)
+    up_hint_norm = np.linalg.norm(up_hint)
+    if up_hint_norm < 1e-8:
+        raise ValueError("up_hint must be nonzero")
+    up_hint = up_hint / up_hint_norm
 
-    return traj
+    quats = np.zeros((N, 4), dtype=float)
+
+    for i in range(N):
+        d = dirs[i]
+        n = np.linalg.norm(d)
+        if n < 1e-8:
+            # Fallback: identity orientation
+            quats[i] = np.array([1.0, 0.0, 0.0, 0.0])
+            continue
+        x_axis = d / n  # body +X in world frame
+
+        # If pointing vector is nearly parallel to up_hint, pick another up
+        if abs(np.dot(x_axis, up_hint)) > 0.99:
+            tmp_up = np.array([0.0, 1.0, 0.0], dtype=float)
+        else:
+            tmp_up = up_hint
+
+        # Compute an orthonormal basis: x = pointing, y, z
+        y_axis = np.cross(tmp_up, x_axis)
+        ny = np.linalg.norm(y_axis)
+        if ny < 1e-8:
+            # Degenerate, pick arbitrary perpendicular
+            if abs(x_axis[0]) < 0.9:
+                y_axis = np.cross(np.array([1.0, 0.0, 0.0]), x_axis)
+            else:
+                y_axis = np.cross(np.array([0.0, 1.0, 0.0]), x_axis)
+            ny = np.linalg.norm(y_axis)
+        y_axis = y_axis / ny
+
+        z_axis = np.cross(x_axis, y_axis)
+
+        R = np.column_stack([x_axis, y_axis, z_axis])  # columns are body axes in world
+
+        quats[i] = _rotmat_to_quat(R)
+
+    logging.info(f"[Trajectory] Computed {N} orientation quaternions from pointing vectors.")
+    return quats
+
+
+# -----------------------------
+# Discrete waypoint state struct
+# -----------------------------
+
+@dataclass
+class WaypointState:
+    """
+    Discrete state at a viewpoint for export to low-level control.
+
+    All quantities are in world frame:
+
+      - pos : position, shape (3,)
+      - vel : velocity, shape (3,)
+      - quat: world<-body quaternion [w, x, y, z]
+      - omega: angular velocity (here typically zero), shape (3,)
+    """
+    pos: np.ndarray
+    vel: np.ndarray
+    quat: np.ndarray
+    omega: np.ndarray
+
+
+def build_waypoint_states(
+    positions: np.ndarray,
+    velocities: Optional[np.ndarray],
+    pointing_vectors: np.ndarray,
+    up_hint: Optional[np.ndarray] = None,
+) -> List[WaypointState]:
+    """
+    Given positions, velocities, and pointing vectors at each viewpoint,
+    build a list of WaypointState objects suitable for export.
+
+    Parameters
+    ----------
+    positions : (N, 3) array
+        Viewpoint positions in world frame.
+    velocities : (N, 3) array or None
+        Desired velocities at each viewpoint. If None, zeros are used.
+    pointing_vectors : (N, 3) array
+        Unit pointing vectors (world frame), typically from compute_pointing_vectors.
+    up_hint : (3,) array or None
+        World up direction for orientation computation, default [0,0,1].
+
+    Returns
+    -------
+    states : list of WaypointState
+        One per viewpoint.
+    """
+    positions = np.asarray(positions, dtype=float)
+    if positions.ndim != 2 or positions.shape[1] != 3:
+        raise ValueError("positions must be shape (N, 3)")
+
+    N = positions.shape[0]
+
+    if velocities is None:
+        velocities = np.zeros((N, 3), dtype=float)
+    else:
+        velocities = np.asarray(velocities, dtype=float)
+        if velocities.shape != (N, 3):
+            raise ValueError("velocities must be shape (N, 3)")
+
+    pointing_vectors = np.asarray(pointing_vectors, dtype=float)
+    if pointing_vectors.shape != (N, 3):
+        raise ValueError("pointing_vectors must be shape (N, 3)")
+
+    quats = compute_orientations_from_pointing(pointing_vectors, up_hint=up_hint)
+
+    states: List[WaypointState] = []
+    for i in range(N):
+        pos = positions[i].copy()
+        vel = velocities[i].copy()
+        quat = quats[i].copy()
+        omega = np.zeros(3, dtype=float)  # could later be nonzero if you want attitude profiles
+
+        states.append(WaypointState(pos=pos, vel=vel, quat=quat, omega=omega))
+
+    logging.info(f"[Trajectory] Built {N} waypoint states (pos, vel, quat, omega).")
+    return states
+
+
+# -----------------------------
+# Convenience packing for export
+# -----------------------------
+
+def pack_states_for_export(states: List[WaypointState]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Convert a list of WaypointState into plain numpy arrays for JSON export.
+
+    Returns
+    -------
+    pos_arr : (N, 3)
+    vel_arr : (N, 3)
+    quat_arr: (N, 4)
+    omega_arr: (N, 3)
+    """
+    N = len(states)
+    pos_arr = np.zeros((N, 3), dtype=float)
+    vel_arr = np.zeros((N, 3), dtype=float)
+    quat_arr = np.zeros((N, 4), dtype=float)
+    omega_arr = np.zeros((N, 3), dtype=float)
+
+    for i, st in enumerate(states):
+        pos_arr[i] = st.pos
+        vel_arr[i] = st.vel
+        quat_arr[i] = st.quat
+        omega_arr[i] = st.omega
+
+    return pos_arr, vel_arr, quat_arr, omega_arr

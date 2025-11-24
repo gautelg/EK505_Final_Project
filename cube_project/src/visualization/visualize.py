@@ -8,12 +8,12 @@ from scipy.spatial import cKDTree
 def plot_path(
     mesh,
     viewpoints,
-    path,
-    vp_size,
-    plot_normals,
-    normal_length,
-    plot_projections,
-    projection_subsample,
+    path=None,
+    vp_size=3,
+    plot_normals=False,
+    normal_length=1.0,
+    plot_projections=False,
+    projection_subsample=10,
     pointing_vectors=None,
     pointing_scale=1.0,
 ):
@@ -100,17 +100,31 @@ def plot_path(
     # -----------------------
     # Path
     # -----------------------
-    path_coords = vp[path]
-    fig.add_trace(
-        go.Scatter3d(
-            x=path_coords[:, 0],
-            y=path_coords[:, 1],
-            z=path_coords[:, 2],
-            mode="lines",
-            line=dict(color="blue", width=4),
-            name="TSP Path",
+    if path is None:
+        # Draw simple connected polyline through viewpoints
+        fig.add_trace(
+            go.Scatter3d(
+                x=viewpoints[:, 0],
+                y=viewpoints[:, 1],
+                z=viewpoints[:, 2],
+                mode="lines",
+                line=dict(color="blue", width=4),
+                name="Path",
+            )
         )
-    )
+    else:
+        # Legacy mode
+        path_coords = viewpoints[path]
+        fig.add_trace(
+            go.Scatter3d(
+                x=path_coords[:, 0],
+                y=path_coords[:, 1],
+                z=path_coords[:, 2],
+                mode="lines",
+                line=dict(color="blue", width=4),
+                name="Path",
+            )
+        )
 
     # -----------------------
     # Normals (cones)
