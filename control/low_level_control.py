@@ -185,7 +185,7 @@ def controller(model, data, input):
     xW = np.where(np.abs(xW)    < POS_TOL, 0.0, xW)
     vW_err = np.where(np.abs(vW_err) < VEL_TOL, 0.0, vW_err)
 
-    m = 25.0  
+    m = 29.5 # 25kg box + 3 reaction wheels of 1.5kg each  
     
     Kp_pos = 25.0
     Kv_pos = 50.0
@@ -216,14 +216,15 @@ def controller(model, data, input):
 
 # ---- viewpoint following state ----
 vp_idx        = 0                  # reached VP index
-POS_DONE_TOL  = 0.02
-VEL_DONE_TOL  = 0.05
+POS_DONE_TOL  = 0.2
+VEL_DONE_TOL  = 0.2
 STOP_TIME    = 0.0
 stop_flag  = None
 
-def reached(p, v, goal):
-    ep = p - goal
-    return (np.linalg.norm(ep) < POS_DONE_TOL) and (np.linalg.norm(v) < VEL_DONE_TOL)
+def reached(p, v, p_goal, v_goal):
+    ep = p - p_goal
+    ev = v - v_goal
+    return (np.linalg.norm(ep) < POS_DONE_TOL) and (np.linalg.norm(ev) < VEL_DONE_TOL)
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
     # Camera setup
@@ -255,8 +256,11 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
             p_curr = np.array(data.qpos[robot_qpos_adr : robot_qpos_adr+3])
             v_curr = np.array(data.qvel[robot_qvel_adr : robot_qvel_adr+3])
 
+            p_goal = VIEWPOINTS_POS[vp_idx]
+            v_goal = VIEWPOINTS_VEL[vp_idx]
+
             # when reached, stop for a while
-            if reached(p_curr, v_curr, VIEWPOINTS_POS[vp_idx]):
+            if reached(p_curr, v_curr, p_goal, v_goal):
                 if stop_flag is None:
                     stop_flag = data.time + STOP_TIME
                 # next point
