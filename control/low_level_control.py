@@ -54,8 +54,6 @@ burn_time_s = np.zeros(6, dtype=float)   # burn time per thruster
 last_ctrl  = np.zeros(model.nu, dtype=float)
 
 
-
-
 # ---------- init the ball pose & velocity ----------
 iss_jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "iss_free")
 iss_qpos_adr = model.jnt_qposadr[iss_jid]
@@ -220,7 +218,7 @@ def controller(model, data, input):
 vp_idx        = 0                  # reached VP index
 POS_DONE_TOL  = 0.02
 VEL_DONE_TOL  = 0.05
-STOP_TIME    = 0.30
+STOP_TIME    = 0.0
 stop_flag  = None
 
 def reached(p, v, goal):
