@@ -3,7 +3,7 @@
   <option gravity="0 0 0" integrator="RK4" timestep="0.002"/>
 
   <asset>
-    <mesh name="iss_mesh" file="ISS_stationary_bare.glb" scale="1 1 1"/>
+    <mesh name="iss_mesh" file="ISS_Stationary_Bare.stl" scale="1 1 1"/>
   </asset>
 
   <worldbody>
