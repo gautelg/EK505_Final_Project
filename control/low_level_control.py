@@ -20,9 +20,9 @@ VP_QUAT  = np.asarray([wp.get("quat",  [1.0, 0.0, 0.0, 0.0]) for wp in WPS], dty
 VP_OMEGA = np.asarray([wp.get("omega", [0.0, 0.0, 0.0]) for wp in WPS], dtype=float)
 
 VIEWPOINTS_POS   = [p * SCALE for p in VP_POS]
-VIEWPOINTS_VEL   = [v for v in VP_VEL]      # keep as-is for now
+VIEWPOINTS_VEL   = [np.zeros(3) for _ in VP_VEL]
 VIEWPOINTS_QUAT  = [q for q in VP_QUAT]
-VIEWPOINTS_OMEGA = [w for w in VP_OMEGA]
+VIEWPOINTS_OMEGA = [np.zeros(3) for _ in VP_OMEGA]
 
 # ----------------- Mujoco model setup -----------------
 
@@ -232,14 +232,14 @@ def controller(model, data, input):
 # ---- viewpoint following state ----
 vp_idx        = 0                  # reached VP index
 POS_DONE_TOL  = 0.2
-VEL_DONE_TOL  = 0.2
+VEL_DONE_TOL  = 0.1
 STOP_TIME    = 0.0
 stop_flag  = None
 
-def reached(p, v, p_goal, v_goal):
+def reached(p, v, p_goal):
     ep = p - p_goal
-    ev = v - v_goal
-    return (np.linalg.norm(ep) < POS_DONE_TOL) and (np.linalg.norm(ev) < VEL_DONE_TOL)
+    # Require position close to goal, and velocity roughly stopped
+    return (np.linalg.norm(ep) < POS_DONE_TOL) and (np.linalg.norm(v) < VEL_DONE_TOL)
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
     # Camera setup
@@ -275,14 +275,13 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
             v_goal = VIEWPOINTS_VEL[vp_idx]
 
             # when reached, stop for a while
-            if reached(p_curr, v_curr, p_goal, v_goal):
+            if reached(p_curr, v_curr, p_goal):
                 if stop_flag is None:
                     stop_flag = data.time + STOP_TIME
                 # next point
                 if data.time >= stop_flag:
                     if vp_idx < len(VIEWPOINTS_POS) - 1:
                         vp_idx += 1
-
                     stop_flag = None
 
             # set the reference positions
