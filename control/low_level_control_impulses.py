@@ -259,14 +259,17 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
             F_B_cmd = np.zeros(3)
 
             if leg_idx < NUM_LEGS:
+                print(f"[DEBUG] leg_idx={leg_idx}, phase={leg_phase}, t_sim={t_sim:.3f}")
                 if leg_phase == "burn":
                     # initialize start time on first entry
                     if leg_phase_start == 0.0:
                         leg_phase_start = t_sim
 
                     dt_phase = t_sim - leg_phase_start
+                    print(f"[DEBUG]  burn dt_phase={dt_phase:.3f}")
 
                     if dt_phase < BURN_DURATION:
+                        print(f"[DEBUG]  delta_v_world={delta_v_world}, F_world={F_world}, F_B_cmd={F_B_cmd}")
                         # target Δv in WORLD frame for this leg
                         delta_v_world = DELTA_VS[leg_idx]      # shape (3,)
 
