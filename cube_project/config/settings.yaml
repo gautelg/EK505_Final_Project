@@ -21,7 +21,7 @@ geometry:
   clean_outer_surface: false   # Only generate outer surface for viewpoints
 
 viewpoint:
-  distance: 10.0                # meters from surface along normals
+  distance: 8.0                # meters from surface along normals
   use_sphere: false
   num_sphere_samples: 500      # only used if use_sphere=true
 
@@ -37,7 +37,7 @@ visualization:
 clustering:
   enable: true
   method: "kmeans"             # options: dbscan, kmeans
-  n_clusters: 50               # desired number of clusters
+  n_clusters: 60               # desired number of clusters
   eps: 1.0                     # max distance between points in a cluster (meters)
   min_samples: 1
 

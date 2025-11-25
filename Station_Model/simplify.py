@@ -1,31 +1,23 @@
-# simplify_watertight_scaled.py  — Blender 4.5 headless-safe
+# simplify_watertight_scaled.py — Blender 4.5 headless-safe
 import bpy, os, sys
 
 # ---- CONFIG ----
 INPUT  = os.path.abspath("ISS_Stationary_Bare.glb")
 
-# Path to this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Project root = parent directory
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
-
-# Desired output directory
 DATA_DIR = os.path.join(PROJECT_ROOT, "cube_project", "data")
-
-# Ensure it exists
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# Final path
-OUTPUT = os.path.join(DATA_DIR, "iss_wt_simplified.obj")
+OUTPUT_SIMPLIFIED = os.path.join(DATA_DIR, "iss_wt_simplified.obj")
+OUTPUT_RAW        = os.path.join(DATA_DIR, "iss_raw_export.obj")
 
-VOXEL_SIZE     = 0.5       # meters - higher = coarser
-SCALE_FACTOR   = 1.1       # 1.0 = no scaling
-SMOOTH_ITERS   = 10         # higher = smoother
-SMOOTH_LAMBDA  = 0.5      # smoothing factor - higher = smoother
-DECIMATE_RATIO = 0.10      # percentage of faces to KEEP
-WELD_THRESH    = 1.0       # meters - higher = more destructive
-# ---------------
+VOXEL_SIZE     = 0.5
+SCALE_FACTOR   = 1.0
+SMOOTH_ITERS   = 10
+SMOOTH_LAMBDA  = 0.5
+DECIMATE_RATIO = 0.10
+WELD_THRESH    = 1.0
 
 def set_active(obj):
     bpy.ops.object.select_all(action='DESELECT')
@@ -72,6 +64,30 @@ obj.scale = (SCALE_FACTOR, SCALE_FACTOR, SCALE_FACTOR)
 set_active(obj)
 bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
+# ----------------------------------------------------------------------
+# NEW STEP: duplicate the pre-simplified mesh and export it to OBJ
+# ----------------------------------------------------------------------
+raw_copy = obj.copy()
+raw_copy.data = obj.data.copy()
+bpy.context.scene.collection.objects.link(raw_copy)
+
+# Export raw copy only
+set_active(raw_copy)
+bpy.ops.wm.obj_export(
+    filepath=OUTPUT_RAW,
+    export_selected_objects=True,   # only the raw_copy
+    export_eval_mode='DAG_EVAL_VIEWPORT',
+    export_triangulated_mesh=True
+)
+print("[OK] Raw mesh exported:", OUTPUT_RAW)
+
+# Remove the raw copy so it does NOT end up inside the simplified OBJ
+bpy.data.objects.remove(raw_copy, do_unlink=True)
+
+# Switch back to main object
+set_active(obj)
+# ----------------------------------------------------------------------
+
 # --- 5) Voxel Remesh (watertight) ---
 rem = obj.modifiers.new("Remesh", 'REMESH')
 rem.mode = 'VOXEL'
@@ -106,11 +122,12 @@ bpy.ops.object.modifier_apply(modifier=tri.name)
 # Smooth shading
 bpy.ops.object.shade_smooth()
 
-# Export OBJ
+# Export simplified OBJ (only remaining mesh object in scene)
+set_active(obj)
 bpy.ops.wm.obj_export(
-    filepath=OUTPUT,
-    export_selected_objects=False,
+    filepath=OUTPUT_SIMPLIFIED,
+    export_selected_objects=True,   # only this object
     export_eval_mode='DAG_EVAL_VIEWPORT',
     export_triangulated_mesh=True
 )
-print("[OK] Exported:", OUTPUT)
+print("[OK] Simplified mesh exported:", OUTPUT_SIMPLIFIED)
