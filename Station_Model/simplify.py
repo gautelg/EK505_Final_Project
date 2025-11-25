@@ -2,7 +2,7 @@
 import bpy, os, sys
 
 # ---- CONFIG ----
-INPUT  = os.path.abspath("ISS_stationary_bare.glb")
+INPUT  = os.path.abspath("ISS_Stationary_Bare.glb")
 
 # Path to this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

@@ -29,6 +29,21 @@ VIEWPOINTS_OMEGA = [w for w in VP_OMEGA]
 model = mujoco.MjModel.from_xml_path('robot.xml')
 data  = mujoco.MjData(model)
 
+# make the robot spawn at the first viewpoint
+# Set robot initial pose to first waypoint
+p0 = VIEWPOINTS_POS[0]
+q0 = VIEWPOINTS_QUAT[0]
+
+# find the robot freejoint
+robot_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "robot")
+robot_jid = model.body_jntadr[robot_bid]
+robot_qpos_adr = model.jnt_qposadr[robot_jid]
+
+# write initial qpos
+data.qpos[robot_qpos_adr : robot_qpos_adr+3] = p0
+data.qpos[robot_qpos_adr+3 : robot_qpos_adr+7] = q0
+
+
 # Thruster index mapping
 def index_map(model):
     act = {}
@@ -60,7 +75,7 @@ iss_qpos_adr = model.jnt_qposadr[iss_jid]
 # iss_qvel_adr = model.jnt_dofadr[iss_jid] 
 
 
-data.qpos[iss_qpos_adr:iss_qpos_adr+3]   = np.array([0.0, 0.0, 0.0])  
+# data.qpos[iss_qpos_adr:iss_qpos_adr+3]   = np.array([0.0, 0.0, 0.0])  
 # data.qvel[iss_qvel_adr:iss_qvel_adr+3]   = np.array([0.0, 0.0, 0.0])
 
 
