@@ -60,7 +60,7 @@ control:
   delta_v_max: 0.1             # max allowed delta-v per maneuver
   viewpoint_tol: 0.5           # tolerance for reaching a viewpoint
   v_final_max: 0.05            # max final velocity at end of mission
-  mass0: 10.0                  # kg, initial spacecraft mass
+  mass0: 29.5                  # kg, initial spacecraft mass
   Isp: 220.0                   # s, example cold gas / low-thrust-ish
   g0: 9.80665                  # m/s^2
   dt_leg: 60.0

@@ -251,7 +251,7 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
     while viewer.is_running():
         now = time.perf_counter()
 
-                # (1) Control tick
+        # (1) Control tick
         if now >= next_ctrl:
             t_sim = data.time
 
