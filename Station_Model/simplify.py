@@ -19,12 +19,12 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # Final path
 OUTPUT = os.path.join(DATA_DIR, "iss_wt_simplified.obj")
 
-VOXEL_SIZE     = 1.0      # meters
-SCALE_FACTOR   = 1.0       # 1.0 = no scaling
-SMOOTH_ITERS   = 8
-SMOOTH_LAMBDA  = 0.15
-DECIMATE_RATIO = 0.1
-WELD_THRESH    = 1.0      # meters
+VOXEL_SIZE     = 0.5       # meters - higher = coarser
+SCALE_FACTOR   = 1.1       # 1.0 = no scaling
+SMOOTH_ITERS   = 10         # higher = smoother
+SMOOTH_LAMBDA  = 0.5      # smoothing factor - higher = smoother
+DECIMATE_RATIO = 0.10      # percentage of faces to KEEP
+WELD_THRESH    = 1.0       # meters - higher = more destructive
 # ---------------
 
 def set_active(obj):
@@ -98,7 +98,7 @@ weld.merge_threshold = WELD_THRESH
 set_active(obj)
 bpy.ops.object.modifier_apply(modifier=weld.name)
 
-# Optional: triangulate
+# --- 8.1) triangulate ---
 tri = obj.modifiers.new("Triangulate", 'TRIANGULATE')
 set_active(obj)
 bpy.ops.object.modifier_apply(modifier=tri.name)
