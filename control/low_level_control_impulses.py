@@ -271,11 +271,12 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
                     if dt_phase < BURN_DURATION:
                         # target Δv in WORLD frame for this leg
                         delta_v_world = DELTA_VS[leg_idx]      # shape (3,)
-                        print(f"[DEBUG]  delta_v_world={delta_v_world}, F_world={F_world}, F_B_cmd={F_B_cmd}")
 
                         # average acceleration over burn window
                         a_world = delta_v_world / BURN_DURATION
                         F_world = M_ROBOT * a_world
+
+                        print(f"[DEBUG]  delta_v_world={delta_v_world}, F_world={F_world}, F_B_cmd={F_B_cmd}")
 
                         # convert to body frame using current attitude
                         qWB = np.array(data.qpos[robot_qpos_adr+3 : robot_qpos_adr+7])
