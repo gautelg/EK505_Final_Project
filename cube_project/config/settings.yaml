@@ -8,6 +8,7 @@ system:
   run_control: false
   visualize: true
   run_collision_free_path: true
+  run_optimization: true
 
 geometry:
   mesh_path: "data/iss_wt_simplified.obj"
@@ -20,7 +21,7 @@ geometry:
   clean_outer_surface: false   # Only generate outer surface for viewpoints
 
 viewpoint:
-  distance: 5.0                # meters from surface along normals
+  distance: 8.0                # meters from surface along normals
   use_sphere: false
   num_sphere_samples: 500      # only used if use_sphere=true
 
@@ -36,7 +37,7 @@ visualization:
 clustering:
   enable: true
   method: "kmeans"             # options: dbscan, kmeans
-  n_clusters: 100              # desired number of clusters
+  n_clusters: 60               # desired number of clusters
   eps: 1.0                     # max distance between points in a cluster (meters)
   min_samples: 1
 
@@ -51,11 +52,21 @@ collision:
   num_samples: 20              # samples per segment when checking collisions
   step: 1.0                    # how far to shift midpoint per iteration (m)
   max_shift: 20.0              # max total shift distance (m)
-  max_depth: 3                 # recursion depth for repair_segment
+  max_depth: 10                # recursion depth for repair_segment
 
-trajectory:
-  cruise_speed: 0.05           # m/s along segments
-  dwell_time: 5.0              # seconds dwell at each waypoint (can set 0.0)
+control:
+  w_fuel: 1.0                  # weight on fuel cost
+  w_time: 0.1                  # weight on time cost
+  delta_v_max: 1.0             # max allowed delta-v per maneuver
+  viewpoint_tol: 0.5           # tolerance for reaching a viewpoint
+  v_final_max: 0.05            # max final velocity at end of mission
+  mass0: 29.5                  # kg, initial spacecraft mass
+  Isp: 220.0                   # s, example cold gas / low-thrust-ish
+  g0: 9.80665                  # m/s^2
+  dt_leg: 60.0
+  dynamics_model: simple
+  dt_min: 5.0                  # minimum time per leg (s)
+  dt_max: 800.0                # maximum time per leg (s)
 
 output_folder: "data/outputs/"
 logging_file: "data/outputs/logs/run.log"

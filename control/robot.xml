@@ -3,7 +3,7 @@
   <option gravity="0 0 0" integrator="RK4" timestep="0.002"/>
 
   <asset>
-    <mesh name="iss_mesh" file="ISS_Stationary_Bare.stl" scale="1 1 1"/>
+    <mesh name="iss_mesh" file="iss_raw_export.obj" scale="1 1 1"/>
   </asset>
 
   <worldbody>
@@ -22,7 +22,7 @@
     <!-- main body: 0.6 m cube, mass=25 kg -->
     <body name="robot" pos="0 0 0">
       <freejoint/>
-      <geom type="box" size="0.3 0.3 0.3" rgba="0.3 0.3 0.8 0.4" mass="25"/>
+      <geom type="box" size="0.3 0.3 0.3" rgba="1.0 0.0 1.0 1.0" mass="25"/>
 
       <!-- Thruster sites on each face (visual markers) -->
       <site name="thruster_px" pos=" 0.3  0.0  0.0" size="0.03" rgba="1 0 0 1"/>

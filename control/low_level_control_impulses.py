@@ -14,35 +14,31 @@ WPS = file.get("waypoints", [])
 if not WPS:
     raise RuntimeError("optimized_viewpoints.json has no 'waypoints' entries")
 
+METRICS = file.get("metrics", {})
+if not METRICS:
+    raise RuntimeError("optimized_viewpoints.json has no 'metrics' entries")
+
+DELTA_VS = np.asarray(METRICS["delta_v_list"], dtype=float)   # shape: (N_legs, 3)
+T_LEGS   = np.asarray(METRICS["t_leg_list"], dtype=float)     # shape: (N_legs,)
+NUM_LEGS = len(DELTA_VS)
+
+# Use mass from optimizer if available, else fall back
+M_ROBOT  = float(METRICS.get("mass0", 25.0))
+
 VP_POS   = np.asarray([wp["pos"] for wp in WPS], dtype=float)
 VP_VEL   = np.asarray([wp.get("vel",   [0.0, 0.0, 0.0]) for wp in WPS], dtype=float)
 VP_QUAT  = np.asarray([wp.get("quat",  [1.0, 0.0, 0.0, 0.0]) for wp in WPS], dtype=float)
 VP_OMEGA = np.asarray([wp.get("omega", [0.0, 0.0, 0.0]) for wp in WPS], dtype=float)
 
 VIEWPOINTS_POS   = [p * SCALE for p in VP_POS]
-VIEWPOINTS_VEL   = [np.zeros(3) for _ in VP_VEL]
+VIEWPOINTS_VEL   = [v for v in VP_VEL]      # keep as-is for now
 VIEWPOINTS_QUAT  = [q for q in VP_QUAT]
-VIEWPOINTS_OMEGA = [np.zeros(3) for _ in VP_OMEGA]
+VIEWPOINTS_OMEGA = [w for w in VP_OMEGA]
 
 # ----------------- Mujoco model setup -----------------
 
 model = mujoco.MjModel.from_xml_path('robot.xml')
 data  = mujoco.MjData(model)
-
-# make the robot spawn at the first viewpoint
-# Set robot initial pose to first waypoint
-p0 = VIEWPOINTS_POS[0]
-q0 = VIEWPOINTS_QUAT[0]
-
-# find the robot freejoint
-robot_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "robot")
-robot_jid = model.body_jntadr[robot_bid]
-robot_qpos_adr = model.jnt_qposadr[robot_jid]
-
-# write initial qpos
-data.qpos[robot_qpos_adr : robot_qpos_adr+3] = p0
-data.qpos[robot_qpos_adr+3 : robot_qpos_adr+7] = q0
-
 
 # Thruster index mapping
 def index_map(model):
@@ -75,9 +71,15 @@ iss_qpos_adr = model.jnt_qposadr[iss_jid]
 # iss_qvel_adr = model.jnt_dofadr[iss_jid] 
 
 
-# data.qpos[iss_qpos_adr:iss_qpos_adr+3]   = np.array([0.0, 0.0, 0.0])  
+data.qpos[iss_qpos_adr:iss_qpos_adr+3]   = np.array([0.0, 0.0, 0.0])  
 # data.qvel[iss_qvel_adr:iss_qvel_adr+3]   = np.array([0.0, 0.0, 0.0])
 
+
+# ---- IVT leg / burn schedule state ----
+leg_idx         = 0            # which Δv leg we’re on
+leg_phase       = "burn"       # "burn" or "coast"
+leg_phase_start = 0.0          # sim-time when current phase began
+BURN_DURATION   = 1.0          # seconds to spread each impulse over (tunable)
 
 
 mujoco.mj_forward(model, data)
@@ -176,70 +178,59 @@ def set_axis_with_min(u, pos_name, neg_name, F_axis, Fsat=10.0, min_fire=0.0):
         if neg_id is not None: u[neg_id] = min(-F_axis, Fsat)
 
 
-def controller(model, data, input):
+def controller(model, data, q_goal, w_goal, F_B_cmd):
+    """
+    Low-level controller:
+      - Translation: apply body-frame force F_B_cmd using thrusters
+      - Rotation: PD on attitude and angular rate using reaction wheels
+    """
     u = np.zeros(model.nu)
 
     # ------------ read state ------------
-    pW  = np.array(data.qpos[robot_qpos_adr : robot_qpos_adr+3])          # world pos
-    qWB = np.array(data.qpos[robot_qpos_adr+3 : robot_qpos_adr+7])        # [w,x,y,z], world<-body
-  
-    vW  = np.array(data.qvel[robot_qvel_adr     : robot_qvel_adr+3])      # linear vel in world
-    wW  = np.array(data.qvel[robot_qvel_adr+3   : robot_qvel_adr+6])      # angular vel in world
+    # robot pose
+    qWB = np.array(data.qpos[robot_qpos_adr+3 : robot_qpos_adr+7])   # [w,x,y,z], world<-body
 
-    # body-frame omega
-    R_WB = quat_to_R(qWB)            
-    wB   = R_WB.T @ wW               
+    # velocities
+    wW  = np.array(data.qvel[robot_qvel_adr+3 : robot_qvel_adr+6])   # angular vel in world
 
-    # ------------ Goal ------------
-    pW_des, vW_des, qWB_des, wB_des = ref(input)
+    # rotation matrix
+    R_WB = quat_to_R(qWB)             # world <- body
+    wB   = R_WB.T @ wW                # angular vel in body frame
 
-    # ------------ translation-----------
-    POS_TOL = 2e-3; VEL_TOL = 2e-3
-    xW = pW - pW_des
-    vW_err = vW - vW_des
-    xW = np.where(np.abs(xW)    < POS_TOL, 0.0, xW)
-    vW_err = np.where(np.abs(vW_err) < VEL_TOL, 0.0, vW_err)
-
-    m = 29.5 # 25kg box + 3 reaction wheels of 1.5kg each  
-    
-    Kp_pos = 25.0
-    Kv_pos = 50.0
-
-    a_des = -Kp_pos * xW - Kv_pos * vW_err          
-    F_W   = m * a_des                              
-    F_B   = R_WB.T @ F_W                            
-
+    # ------------ translation: use F_B_cmd directly ------------
     Fmax_axis = 20.0
-    set_axis_with_min(u, "thruster_px","thruster_nx", F_B[0], Fsat=Fmax_axis)
-    set_axis_with_min(u, "thruster_py","thruster_ny", F_B[1], Fsat=Fmax_axis)
-    set_axis_with_min(u, "thruster_pz","thruster_nz", F_B[2], Fsat=Fmax_axis)
+    set_axis_with_min(u, "thruster_px","thruster_nx", F_B_cmd[0], Fsat=Fmax_axis)
+    set_axis_with_min(u, "thruster_py","thruster_ny", F_B_cmd[1], Fsat=Fmax_axis)
+    set_axis_with_min(u, "thruster_pz","thruster_nz", F_B_cmd[2], Fsat=Fmax_axis)
 
-    # ------------ rotation------------
-   
-    eR   = attitude_error_vec(qWB, qWB_des)     # body error vector
+    # ------------ rotation: PD on attitude and rate ------------
+    # attitude error from current to desired
+    eR = attitude_error_vec(qWB, q_goal)   # body-frame error vector
 
     K_R = np.array([2.0, 2.0, 2.0])
     K_w = np.array([0.6, 0.6, 0.6])
-    tauB = -K_R*eR - K_w*(wB - wB_des)
 
+    tauB = -K_R * eR - K_w * (wB - w_goal)
     tauB = np.clip(tauB, -5.0, 5.0)
+
     if ACT["rw_x"] is not None: u[ACT["rw_x"]] = tauB[0]
     if ACT["rw_y"] is not None: u[ACT["rw_y"]] = tauB[1]
     if ACT["rw_z"] is not None: u[ACT["rw_z"]] = tauB[2]
 
     return u
 
+
 # ---- viewpoint following state ----
 vp_idx        = 0                  # reached VP index
 POS_DONE_TOL  = 0.2
-VEL_DONE_TOL  = 0.1
+VEL_DONE_TOL  = 0.2
 STOP_TIME    = 0.0
 stop_flag  = None
 
-def reached(p, v, p_goal):
+def reached(p, v, p_goal, v_goal):
     ep = p - p_goal
-    # Require position close to goal, and velocity roughly stopped
-    return (np.linalg.norm(ep) < POS_DONE_TOL) and (np.linalg.norm(v) < VEL_DONE_TOL)
+    ev = v - v_goal
+    return (np.linalg.norm(ep) < POS_DONE_TOL) and (np.linalg.norm(ev) < VEL_DONE_TOL)
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
     # Camera setup
@@ -262,39 +253,60 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
 
         # (1) Control tick
         if now >= next_ctrl:
-            # Use simulation time as the controller’s independent variable for stability
             t_sim = data.time
-            
 
-            # ------- build desired input from current viewpoint -------
-           
-            p_curr = np.array(data.qpos[robot_qpos_adr : robot_qpos_adr+3])
-            v_curr = np.array(data.qvel[robot_qvel_adr : robot_qvel_adr+3])
+            # ------------ IVT burn / coast schedule for translation ------------
+            F_B_cmd = np.zeros(3)
 
-            p_goal = VIEWPOINTS_POS[vp_idx]
-            v_goal = VIEWPOINTS_VEL[vp_idx]
+            if leg_idx < NUM_LEGS:
+                print(f"[DEBUG] leg_idx={leg_idx}, phase={leg_phase}, t_sim={t_sim:.3f}")
+                if leg_phase == "burn":
+                    # initialize start time on first entry
+                    if leg_phase_start == 0.0:
+                        leg_phase_start = t_sim
 
-            # when reached, stop for a while
-            if reached(p_curr, v_curr, p_goal):
-                if stop_flag is None:
-                    stop_flag = data.time + STOP_TIME
-                # next point
-                if data.time >= stop_flag:
-                    if vp_idx < len(VIEWPOINTS_POS) - 1:
-                        vp_idx += 1
-                    stop_flag = None
+                    dt_phase = t_sim - leg_phase_start
+                    print(f"[DEBUG]  burn dt_phase={dt_phase:.3f}")
 
-            # set the reference positions
-            p_goal = VIEWPOINTS_POS[vp_idx]
-            v_goal = VIEWPOINTS_VEL[vp_idx]
-            q_goal = VIEWPOINTS_QUAT[vp_idx]
-            w_goal = VIEWPOINTS_OMEGA[vp_idx]
+                    if dt_phase < BURN_DURATION:
+                        # target Δv in WORLD frame for this leg
+                        delta_v_world = DELTA_VS[leg_idx]      # shape (3,)
 
-            desired = np.concatenate([p_goal, v_goal, q_goal, w_goal])
-            u = controller(model, data, desired)
+                        # average acceleration over burn window
+                        a_world = delta_v_world / BURN_DURATION
+                        F_world = M_ROBOT * a_world
+
+                        print(f"[DEBUG]  delta_v_world={delta_v_world}, F_world={F_world}, F_B_cmd={F_B_cmd}")
+
+                        # convert to body frame using current attitude
+                        qWB = np.array(data.qpos[robot_qpos_adr+3 : robot_qpos_adr+7])
+                        R_WB = quat_to_R(qWB)                   # world <- body
+                        F_B_cmd = R_WB.T @ F_world              # body-frame force
+                    else:
+                        # done burning this impulse, start coasting
+                        leg_phase = "coast"
+                        leg_phase_start = t_sim
+
+                elif leg_phase == "coast":
+                    dt_phase = t_sim - leg_phase_start
+                    # coast for the scheduled leg time from the optimizer
+                    if dt_phase >= T_LEGS[leg_idx]:
+                        # advance to next leg, back to burn
+                        leg_idx += 1
+                        leg_phase = "burn"
+                        leg_phase_start = 0.0
+
+            # ------------ Attitude target from waypoints ------------
+            # Map leg index to a waypoint index; waypoints are usually N_legs+1 long.
+            att_idx = min(leg_idx, len(VIEWPOINTS_QUAT) - 1)
+            q_goal = VIEWPOINTS_QUAT[att_idx]
+            w_goal = VIEWPOINTS_OMEGA[att_idx]
+
+            # Low-level control using reaction wheels + thrusters
+            u = controller(model, data, q_goal, w_goal, F_B_cmd)
 
             data.ctrl[:] = u
-            last_ctrl = u.copy() 
+            last_ctrl = u.copy()
 
             next_ctrl += 1.0 / CONTROL_HZ
             # Prevent excessive drift if the system lags
