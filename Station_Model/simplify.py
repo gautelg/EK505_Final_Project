@@ -12,12 +12,12 @@ os.makedirs(DATA_DIR, exist_ok=True)
 OUTPUT_SIMPLIFIED = os.path.join(DATA_DIR, "iss_wt_simplified.obj")
 OUTPUT_RAW        = os.path.join(DATA_DIR, "iss_raw_export.obj")
 
-VOXEL_SIZE     = 0.5
-SCALE_FACTOR   = 1.0
-SMOOTH_ITERS   = 10
-SMOOTH_LAMBDA  = 0.5
-DECIMATE_RATIO = 0.10
-WELD_THRESH    = 1.0
+VOXEL_SIZE     = 1.2 # larger = more aggressive simplification
+SCALE_FACTOR   = 1.0 # scale input model by this factor
+SMOOTH_ITERS   = 5 # number of laplacian smooth iterations -> more = smoother
+SMOOTH_LAMBDA  = 0.3 # laplacian smooth factor (0-1) -> higher = smoother
+DECIMATE_RATIO = 0.9 # final face count ratio -> higher = more faces
+WELD_THRESH    = 1.3 # distance threshold for welding vertices
 
 def set_active(obj):
     bpy.ops.object.select_all(action='DESELECT')

@@ -21,7 +21,7 @@ geometry:
   clean_outer_surface: false   # Only generate outer surface for viewpoints
 
 viewpoint:
-  distance: 8.0                # meters from surface along normals
+  distance: 10.0                # meters from surface along normals
   use_sphere: false
   num_sphere_samples: 500      # only used if use_sphere=true
 
@@ -37,7 +37,7 @@ visualization:
 clustering:
   enable: true
   method: "kmeans"             # options: dbscan, kmeans
-  n_clusters: 60               # desired number of clusters
+  n_clusters: 150              # desired number of clusters
   eps: 1.0                     # max distance between points in a cluster (meters)
   min_samples: 1
 
@@ -48,16 +48,16 @@ tsp:
   method: "nearest_neighbor"
 
 collision:
-  margin: 0.5                  # safety margin in meters outside hull
-  num_samples: 20              # samples per segment when checking collisions
-  step: 1.0                    # how far to shift midpoint per iteration (m)
-  max_shift: 20.0              # max total shift distance (m)
-  max_depth: 10                # recursion depth for repair_segment
+  margin: 2.0                   # safety margin in meters outside hull
+  num_samples: 5000             # samples per segment when checking collisions
+  step: 1.0                     # how far to shift midpoint per iteration (m)
+  max_shift: 100.0              # max total shift distance (m)
+  max_depth: 100                # recursion depth for repair_segment
 
 control:
   w_fuel: 1.0                  # weight on fuel cost
   w_time: 0.1                  # weight on time cost
-  delta_v_max: 1.0             # max allowed delta-v per maneuver
+  delta_v_max: 2.0             # max allowed delta-v per maneuver
   viewpoint_tol: 0.5           # tolerance for reaching a viewpoint
   v_final_max: 0.05            # max final velocity at end of mission
   mass0: 29.5                  # kg, initial spacecraft mass
@@ -66,7 +66,7 @@ control:
   dt_leg: 60.0
   dynamics_model: simple
   dt_min: 5.0                  # minimum time per leg (s)
-  dt_max: 800.0                # maximum time per leg (s)
+  dt_max: 1000.0                # maximum time per leg (s)
 
 output_folder: "data/outputs/"
 logging_file: "data/outputs/logs/run.log"

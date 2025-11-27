@@ -250,6 +250,7 @@ def repair_segment(
             "[CollisionAvoidance] Max depth reached while repairing segment; "
             "returning potentially unsafe segment."
         )
+        print("returning potentially unsafe segment")
         return [pA, pB]
 
     # Try to find candidate shifted midpoints
@@ -269,6 +270,7 @@ def repair_segment(
             "[CollisionAvoidance] No safe midpoint found for segment at depth "
             f"{depth}; returning original segment."
         )
+        print("no safe midpoint found, returning original segment")
         return [pA, pB]
 
     # Choose the candidate closest to pA (your heuristic)
