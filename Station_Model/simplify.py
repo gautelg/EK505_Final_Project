@@ -2,7 +2,7 @@
 import bpy, os, sys
 
 # ---- CONFIG ----
-INPUT  = os.path.abspath("ISS_Stationary_Bare.glb")
+INPUT  = os.path.abspath("Station.glb")
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
