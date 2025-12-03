@@ -4,11 +4,15 @@ system:
   run_visibility: true
   run_clustering: true
   run_tsp: true
-  run_detection: false
+  run_detection: true
   run_control: false
   visualize: true
   run_collision_free_path: true
   run_optimization: true
+
+detection:
+  camera_index: 1
+  save_output: true
 
 geometry:
   mesh_path: "data/iss_wt_simplified.obj"
