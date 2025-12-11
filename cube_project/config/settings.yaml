@@ -4,11 +4,11 @@ system:
   run_visibility: true
   run_clustering: true
   run_tsp: true
-  run_detection: true
+  run_detection: false
   run_control: false
   visualize: true
   run_collision_free_path: true
-  run_optimization: true
+  run_optimization: false
 
 detection:
   camera_index: 1
@@ -33,15 +33,17 @@ visualization:
   viewpoint_size: 3.0          # radius in meters if Open3D sphere, or marker size in Plotly
   plot_normals: false          # set True to visualize viewpoint normals
   normal_length: 1.0           # scaling factor for normals
-  plot_projections: true       # set True to visualize centroid -> viewpoint rays
+  plot_projections: false       # set True to visualize centroid -> viewpoint rays
   projection_subsample: 50     # draw projection lines for every Nth centroid
   plot_pointing: true          # whether to draw pointing arrows
   pointing_scale: 2.0          # length of the arrow in meters
+  plot_coverage: true         # whether to color mesh by coverage
+  coverage_json_path: "data/outputs/coverage.json"  # path to save coverage data
 
 clustering:
   enable: true
   method: "kmeans"             # options: dbscan, kmeans
-  n_clusters: 150              # desired number of clusters
+  n_clusters: 120              # desired number of clusters
   eps: 1.0                     # max distance between points in a cluster (meters)
   min_samples: 1
 

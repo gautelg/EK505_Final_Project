@@ -2,9 +2,10 @@
 
 import numpy as np
 import logging
+import json  # NEW
 from src.pipeline.run_geometry import run_geometry
 from src.pipeline.run_viewpoints import run_viewpoints
-# import run_control, run_detection only if needed
+from src.pipeline.run_coverage import compute_coverage  # NEW
 
 def run_full_pipeline(config):
     system_cfg = config["system"]
@@ -17,6 +18,9 @@ def run_full_pipeline(config):
     safe_waypoints = None
     trajectory = None
     pointing_vectors = None
+    vis_matrix = None
+    coverage = None          # NEW
+    covered_faces = None     # NEW  (bool mask per face)
 
     # -----------------------------
     # GEOMETRY
@@ -32,7 +36,42 @@ def run_full_pipeline(config):
     # -----------------------------
     if system_cfg.get("run_viewpoints", True):
         logging.info("[SYSTEM] Running viewpoint generation...")
-        viewpoints, path = run_viewpoints(config, mesh, centroids, normals)
+        viewpoints, path, vis_matrix = run_viewpoints(
+            config, mesh, centroids, normals
+        )
+
+        # -------------------------
+        # COVERAGE (discrete path)
+        # -------------------------
+        if vis_matrix is not None and path is not None:
+            coverage, covered_faces = compute_coverage(vis_matrix, path)
+            logging.info(
+                "[SYSTEM] Coverage from TSP path: %.2f %%",
+                coverage * 100.0,
+            )
+
+            # -------------------------
+            # SAVE COVERAGE TO JSON
+            # -------------------------
+            vis_cfg = config.get("visualization", {})
+            cov_json_path = vis_cfg.get("coverage_json_path", None)
+            if cov_json_path is not None:
+                n_faces = int(covered_faces.size)
+                n_cov = int(covered_faces.sum())
+                cov_payload = {
+                    "coverage": coverage,
+                    "faces_covered": n_cov,
+                    "faces_total": n_faces,
+                    "path_length": int(len(path)),
+                    "num_viewpoints": int(len(viewpoints)),
+                }
+                # ensure parent dir exists if you want, or rely on user
+                with open(cov_json_path, "w") as f:
+                    json.dump(cov_payload, f, indent=2)
+                logging.info(
+                    "[SYSTEM] Coverage JSON written to %s", cov_json_path
+                )
+
     else:
         logging.info("[SYSTEM] Viewpoint generation skipped")
 
@@ -89,9 +128,10 @@ def run_full_pipeline(config):
         vis_cfg = config["visualization"]
         plot_pointing = vis_cfg.get("plot_pointing", False)
         pointing_scale = vis_cfg.get("pointing_scale", 2.0)
+        plot_coverage = vis_cfg.get("plot_coverage", False)  # NEW
 
         # Case 1: We have optimized positions
-        if system_cfg.get("run_optimization", False) and waypoint_states is not None:
+        if system_cfg.get("run_optimization", False) and 'waypoint_states' in locals() and waypoint_states is not None:
             logging.info("[SYSTEM] Visualizing optimized trajectory...")
 
             # Extract optimized positions & velocities
@@ -109,6 +149,7 @@ def run_full_pipeline(config):
                 projection_subsample=vis_cfg["projection_subsample"],
                 pointing_vectors=opt_pointing if plot_pointing else None,
                 pointing_scale=pointing_scale,
+                covered_faces=covered_faces if plot_coverage else None,  # NEW
             )
 
         # Case 2: No optimization but have safe collision-free path
@@ -127,6 +168,7 @@ def run_full_pipeline(config):
                 projection_subsample=vis_cfg["projection_subsample"],
                 pointing_vectors=pointing_vectors if plot_pointing else None,
                 pointing_scale=pointing_scale,
+                covered_faces=covered_faces if plot_coverage else None,  # NEW
             )
 
         # Case 3: Legacy fallback
@@ -143,19 +185,17 @@ def run_full_pipeline(config):
                 projection_subsample=vis_cfg["projection_subsample"],
                 pointing_vectors=None,
                 pointing_scale=pointing_scale,
+                covered_faces=covered_faces if plot_coverage else None,  # NEW
             )
 
-# Optional: allow running directly
-if __name__ == "__main__":
-    import yaml
-    with open("config/settings.yaml") as f:
-        config = yaml.safe_load(f)
-
-    logging.basicConfig(
-        filename=config["logging_file"],
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s"
-    )
-    logging.info("Starting pipeline...")
-    run_full_pipeline(config)
-    logging.info("Pipeline finished.")
+    return {
+        "mesh": mesh,
+        "viewpoints": viewpoints,
+        "path": path,
+        "vis_matrix": vis_matrix,
+        "coverage": coverage,
+        "covered_faces": covered_faces,  # NEW
+        "safe_waypoints": safe_waypoints,
+        "trajectory": trajectory,
+        "pointing_vectors": pointing_vectors,
+    }

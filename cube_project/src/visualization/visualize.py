@@ -1,9 +1,12 @@
 """ handles all visualization (mesh, viewpoints, path, normals, projection rays, pointing arrows) """
 
 import plotly.graph_objects as go
+import plotly.io as pio
 import numpy as np
 from scipy.spatial import cKDTree
 
+# Force Plotly to write a static HTML file and open it in your default browser
+pio.renderers.default = "browser"
 
 def plot_path(
     mesh,
@@ -16,19 +19,21 @@ def plot_path(
     projection_subsample=10,
     pointing_vectors=None,
     pointing_scale=1.0,
+    covered_faces=None,
 ):
     """
     Plots:
-    - Mesh
+    - Mesh (uniform grey)
     - Viewpoints
     - Shortest path (TSP)
     - Optional: Triangle normals as cones
     - Optional: Lines from centroids → nearest viewpoint (projection rays)
     - Optional: Pointing vectors as arrows from each viewpoint
+    - Optional: Coverage as red markers at centroids of uncovered faces
     """
 
     # -----------------------
-    # Mesh
+    # Mesh (always uniform)
     # -----------------------
     vertices = np.asarray(mesh.vertices)
     triangles = np.asarray(mesh.triangles)
@@ -67,6 +72,45 @@ def plot_path(
     )
 
     # -----------------------
+    # Coverage as centroids of uncovered faces
+    # -----------------------
+    if covered_faces is not None:
+        covered_faces = np.asarray(covered_faces, dtype=bool)
+        n_triangles = triangles.shape[0]
+        if covered_faces.shape[0] != n_triangles:
+            raise ValueError(
+                f"covered_faces length {covered_faces.shape[0]} "
+                f"does not match number of triangles {n_triangles}"
+            )
+
+        # Compute triangle centroids
+        centroids = vertices[triangles].mean(axis=1)
+
+        # Focus on uncovered faces
+        uncovered_mask = ~covered_faces
+        uncovered_centroids = centroids[uncovered_mask]
+
+        # Subsample to avoid murdering the browser on huge meshes
+        max_points = 10000  # tweak as needed
+        if uncovered_centroids.shape[0] > max_points:
+            idx = np.linspace(
+                0, uncovered_centroids.shape[0] - 1, max_points
+            ).astype(int)
+            uncovered_centroids = uncovered_centroids[idx]
+
+        if uncovered_centroids.size > 0:
+            fig.add_trace(
+                go.Scatter3d(
+                    x=uncovered_centroids[:, 0],
+                    y=uncovered_centroids[:, 1],
+                    z=uncovered_centroids[:, 2],
+                    mode="markers",
+                    marker=dict(size=2, color="red"),
+                    name="Uncovered faces",
+                )
+            )
+
+    # -----------------------
     # Pointing arrows (viewpoint -> viewpoint + pointing_scale * d)
     # -----------------------
     if pointing_vectors is not None:
@@ -77,9 +121,9 @@ def plot_path(
             raise ValueError("pointing_vectors must have same shape as viewpoints (M, 3)")
 
         xs, ys, zs = [], [], []
-        for i in range(viewpoints_arr.shape[0]):
-            p = viewpoints_arr[i]
-            d = pointing_arr[i]
+        for idx in range(viewpoints_arr.shape[0]):
+            p = viewpoints_arr[idx]
+            d = pointing_arr[idx]
             p_end = p + pointing_scale * d
 
             xs.extend([p[0], p_end[0], np.nan])
@@ -113,7 +157,7 @@ def plot_path(
             )
         )
     else:
-        # Legacy mode
+        # Legacy mode: path is an index list into viewpoints
         path_coords = viewpoints[path]
         fig.add_trace(
             go.Scatter3d(
@@ -157,7 +201,7 @@ def plot_path(
         num_centroids = len(centroids)
         for idx in range(0, num_centroids, projection_subsample):
             centroid = centroids[idx]
-            dist, vp_idx = tree.query(centroid)  # closest viewpoint
+            _, vp_idx = tree.query(centroid)  # closest viewpoint
             viewpoint = vp[vp_idx]
             fig.add_trace(
                 go.Scatter3d(
@@ -177,4 +221,9 @@ def plot_path(
         scene=dict(aspectmode="data"),
         legend=dict(itemsizing="constant"),
     )
-    fig.show()
+
+    # Write a self-contained HTML file and open it
+    out_path = "output/coverage_vis.html"
+    import os
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    fig.write_html(out_path, auto_open=True)

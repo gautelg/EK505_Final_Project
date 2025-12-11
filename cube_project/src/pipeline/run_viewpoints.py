@@ -27,16 +27,6 @@ def run_viewpoints(config, mesh, centroids, normals):
     logging.info(f"[Viewpoints] Generated {len(viewpoints)} candidate viewpoints")
 
     # -----------------------------
-    # Compute visibility
-    # -----------------------------
-    if config.get("visibility", {}).get("enable", True):
-        vis_checker = VisibilityChecker(mesh)
-        visibility = vis_checker.check_visibility(viewpoints, centroids)
-        logging.info("[Viewpoints] Visibility computed")
-    else:
-        visibility = [list(range(len(centroids))) for _ in range(len(viewpoints))]
-
-    # -----------------------------
     # Cluster / filter viewpoints
     # -----------------------------
     cluster_cfg = config.get("clustering", {})
@@ -49,9 +39,32 @@ def run_viewpoints(config, mesh, centroids, normals):
         logging.info(f"[Viewpoints] Clustered to {len(viewpoints)} viewpoints")
 
     # -----------------------------
+    # Compute visibility
+    # -----------------------------
+    vis_cfg = config.get("visibility", {})
+    n_faces = len(centroids)
+    n_view = len(viewpoints)
+
+    if vis_cfg.get("enable", True):
+        vis_checker = VisibilityChecker(mesh)
+        # Typically: list-of-lists, one list of visible face indices per viewpoint
+        visibility_lists = vis_checker.check_visibility(viewpoints, centroids)
+        logging.info("[Viewpoints] Visibility computed for clustered viewpoints")
+    else:
+        # Fallback: every viewpoint sees every face
+        visibility_lists = [list(range(n_faces)) for _ in range(n_view)]
+        logging.info("[Viewpoints] Visibility disabled; assuming full visibility")
+
+    # Convert list-of-lists → boolean matrix (N_view, N_faces)
+    vis_matrix = np.zeros((n_view, n_faces), dtype=bool)
+    for i, face_ids in enumerate(visibility_lists):
+        # face_ids is e.g. [0, 5, 17, ...] for viewpoint i
+        vis_matrix[i, face_ids] = True
+
+    # -----------------------------
     # Solve TSP for optimal path
     # -----------------------------
     path = tsp_nearest_neighbor(viewpoints)
     logging.info(f"[Viewpoints] TSP solved for path with {len(path)} waypoints")
 
-    return viewpoints, path
+    return viewpoints, path, vis_matrix
